@@ -2149,6 +2149,7 @@ let existingTranscriptId = null;
 let pageStateVersion = 0;
 
 async function showCurrentPageState() {
+  if (isTranscribing) return;
   existingTranscriptId = null;
   const version = ++pageStateVersion;
 
@@ -2179,7 +2180,7 @@ async function showCurrentPageState() {
   const existingRes = await sendMsg({ type: "CHECK_EXISTING", videoId: pageInfo.videoId });
 
   // Stale check — a newer call has taken over
-  if (version !== pageStateVersion) return;
+  if (version !== pageStateVersion || isTranscribing) return;
   if (isSettingsOpen()) return;
 
   if (existingRes?.success && existingRes.data) {
@@ -2193,6 +2194,10 @@ async function showCurrentPageState() {
 }
 
 let initVersion = 0;
+function initWasSuperseded(version) {
+  return version !== initVersion || isTranscribing;
+}
+
 // True after the first init() has completed its CHECK_SERVICE round-trip.
 // The cold-start retry below is only useful on the genuinely cold first
 // hit; subsequent init() calls (nav clicks, post-OAuth re-runs) talk to a
@@ -2240,7 +2245,7 @@ async function init() {
       getCachedAuth(),
     ]);
   } catch { /* ignore */ }
-  if (thisInit !== initVersion) return;
+  if (initWasSuperseded(thisInit)) return;
 
   const mode = syncStash?.mode || "cloud";
   currentMode = mode;
@@ -2281,6 +2286,7 @@ async function init() {
     // "Already transcribed" link instead. showCurrentPageState() will
     // reconcile via CHECK_EXISTING if our cache is wrong.
     const cachedHit = await maybeFindCachedTranscript(pageInfo.videoId, mode);
+    if (initWasSuperseded(thisInit)) return;
     if (cachedHit) {
       existingTranscriptId = cachedHit.id;
       el.btnTranscribe.hidden = true;
@@ -2301,7 +2307,7 @@ async function init() {
   // either. If a transcription is in flight we'll override the optimistic
   // state with the Transcribing UI.
   const statusRes = await sendMsg({ type: "GET_TRANSCRIPTION_STATUS" });
-  if (thisInit !== initVersion) return;
+  if (initWasSuperseded(thisInit)) return;
   if (statusRes?.success && statusRes.data) {
     const pending = statusRes.data;
     if (pending.status === "transcribing") {
@@ -2348,7 +2354,7 @@ async function init() {
   // and the service is up + authed, this is a no-op visually. If we got it
   // wrong, swap to the offline / sign-in UI.
   let serviceRes = await sendMsg({ type: "CHECK_SERVICE" });
-  if (thisInit !== initVersion) return;
+  if (initWasSuperseded(thisInit)) return;
   let online = serviceRes?.success && serviceRes.data?.online;
 
   // Cold-start race: /api/account can 401 on a Supabase cookie warmup. Retry
@@ -2363,9 +2369,9 @@ async function init() {
     }
     if (shouldRetry) {
       await new Promise((r) => setTimeout(r, 400));
-      if (thisInit !== initVersion) return;
+      if (initWasSuperseded(thisInit)) return;
       serviceRes = await sendMsg({ type: "CHECK_SERVICE" });
-      if (thisInit !== initVersion) return;
+      if (initWasSuperseded(thisInit)) return;
       online = serviceRes?.success && serviceRes.data?.online;
     }
   }
@@ -2412,7 +2418,7 @@ async function init() {
       ]);
       if (!localBannerDismissed) {
         const localRes = await sendMsg({ type: "DETECT_LOCAL" });
-        if (thisInit !== initVersion) return;
+        if (initWasSuperseded(thisInit)) return;
         if (localRes?.success && localRes.data?.available) {
           el.localDetectedBanner.hidden = false;
         }
@@ -2426,6 +2432,7 @@ async function init() {
       // Detect (or re-detect on each offline render) whether the native host
       // is installed so the right primary action shows.
       await ensureNativeHostDetected();
+      if (initWasSuperseded(thisInit)) return;
       // Auto-route to Settings → Server when the host is installed. Server
       // controls live there now; landing the user directly on the Start
       // button feels more "embedded in the product" than the takeover
@@ -2452,6 +2459,7 @@ async function init() {
   // Warm the destinations cache so the ⋯ menu renders instantly.
   // Always — Obsidian is available in local mode too.
   fetchDestinations();
+  if (initWasSuperseded(thisInit)) return;
 
   // Show page state (re-runs in case optimistic was stale, e.g. videoId
   // resolved to "Already transcribed" from CHECK_EXISTING).
@@ -2547,6 +2555,8 @@ async function doTranscribe() {
   });
 
   isTranscribing = true;
+  initVersion++;
+  pageStateVersion++;
   el.transcribingTitle.textContent = pageInfo.title || "Transcribing...";
   showState("Transcribing");
   el.queuePrompt.hidden = true;
@@ -2571,6 +2581,18 @@ async function doTranscribe() {
     title: pageInfo.title,
   });
   console.log("[ytt-popup] TRANSCRIBE response", res);
+
+  if (res?.success && res.data?.status === "processing" && res.data?.id) {
+    suppressPollFinalization = false;
+    const isCloudProcessing = currentMode === "cloud";
+    if (!pollInterval) {
+      pollTranscriptionStatus();
+    }
+    if (isCloudProcessing) {
+      el.progressText.textContent = res.data.progress || "Transcription in progress...";
+    }
+    return;
+  }
 
   isTranscribing = false;
   suppressPollFinalization = false;

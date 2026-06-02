@@ -419,8 +419,8 @@ async function tryHealthCheck(baseUrl, headers, mode, credentials) {
   }
 }
 
-async function transcribeRequest(url, extras = {}) {
-  const config = await getApiConfig();
+async function transcribeRequest(url, extras = {}, configOverride = null) {
+  const config = configOverride || await getApiConfig();
   const body = { url };
   if (extras?.segments?.length) {
     body.segments = extras.segments;
@@ -441,11 +441,6 @@ async function transcribeRequest(url, extras = {}) {
   const data = await res.json();
   if (!res.ok) {
     throw new Error(await classifyError(res.status, data));
-  }
-
-  // Cloud mode: poll until async job completes
-  if (res.status === 202 && data.status === "processing" && data.id) {
-    return await pollUntilDone(data.id, config);
   }
 
   return data;
@@ -572,7 +567,7 @@ async function tryExtractCaptions(url) {
   };
 }
 
-async function pollUntilDone(id, config) {
+async function pollUntilDone(id, config, onProgress) {
   const maxAttempts = 120; // 6 minutes at 3s intervals
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise((r) => setTimeout(r, 3000));
@@ -585,13 +580,8 @@ async function pollUntilDone(id, config) {
       const data = await res.json();
       if (data.status === "done") return data;
       if (data.status === "failed") throw new Error(data.error || "Transcription failed");
-      // Update progress text for the popup to pick up
       if (data.progress) {
-        const state = await getState();
-        if (state && state.status === "transcribing") {
-          state.progressText = data.progress;
-          await setState(state);
-        }
+        await onProgress?.(data.progress);
       }
     } catch (err) {
       if (err.message === "Transcription failed") throw err;
@@ -599,6 +589,58 @@ async function pollUntilDone(id, config) {
     }
   }
   throw new Error("Transcription timed out");
+}
+
+function isProcessingResponse(data) {
+  return data?.status === "processing" && typeof data.id === "string" && data.id.length > 0;
+}
+
+async function monitorProcessingTranscript(jobId, url, title, benchmark, config) {
+  try {
+    const data = await pollUntilDone(jobId, config, async (progressText) => {
+      const current = await getState();
+      if (current?.status !== "transcribing" || current.jobId !== jobId) return;
+      await setState({ ...current, progressText });
+    });
+    const current = await getState();
+    if (current?.status !== "transcribing" || current.jobId !== jobId) return;
+    await setState({
+      ...current,
+      status: "done",
+      result: data,
+      progressText: null,
+    });
+    setBadge("✓", "#22c55e");
+    setTimeout(() => {
+      getState().then((s) => {
+        if (s?.status === "done" || !s) setBadge("");
+      });
+    }, 5000);
+    console.log("[ytt-bg] async transcribe complete", {
+      url,
+      videoId: youtubeVideoId(url),
+      jobId,
+      source: data?.source || null,
+      benchmark,
+    });
+    await processNextInQueue();
+  } catch (err) {
+    const current = await getState();
+    if (current?.status !== "transcribing" || current.jobId !== jobId) return;
+    await setState({
+      ...current,
+      status: "error",
+      error: err?.message || "Transcription failed",
+      progressText: null,
+    });
+    setBadge("!", "#ef4444");
+    console.warn("[ytt-bg] async transcribe failed", {
+      url,
+      title: title || "",
+      jobId,
+      message: err?.message || String(err),
+    });
+  }
 }
 
 async function classifyError(status, data) {
@@ -1072,8 +1114,9 @@ async function doTranscribe(url, title) {
     const captions = await tryExtractCaptions(url);
     const tCaptions = performance.now() - t0;
     const extras = captions ? { ...captions, title: title || "" } : {};
+    const config = await getApiConfig();
     const tReq = performance.now();
-    const data = await transcribeRequest(url, extras);
+    const data = await transcribeRequest(url, extras, config);
     const tServer = performance.now() - tReq;
     const tTotal = performance.now() - t0;
     const benchmark = {
@@ -1098,6 +1141,13 @@ async function doTranscribe(url, title) {
       while (arr.length > 20) arr.shift();
       await chrome.storage.local.set({ transcribeBench: arr });
     } catch { /* benchmark logging is best-effort */ }
+    if (isProcessingResponse(data)) {
+      state.jobId = data.id;
+      state.progressText = data.progress || "Transcription in progress...";
+      await setState(state);
+      monitorProcessingTranscript(data.id, url, title, benchmark, config);
+      return data;
+    }
     state.status = "done";
     state.result = data;
     await setState(state);
