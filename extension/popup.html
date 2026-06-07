@@ -186,6 +186,10 @@
       <div class="section-label">Settings</div>
       <div id="cloudAccountSection" class="settings-account" hidden>
         <a class="settings-account-link" href="https://www.transcribed.dev/account" target="_blank">
+          <svg class="settings-account-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2"/>
+            <path d="M4 20c1.6-4 4.2-6 8-6s6.4 2 8 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
           Manage account
         </a>
       </div>
@@ -280,6 +284,13 @@
           <p class="settings-advanced-help">
             Cloud is recommended. Self-hosted runs transcription on your own machine — requires Python, ffmpeg, and a local server.
           </p>
+          <label class="settings-check-row">
+            <span class="settings-check-copy">
+              <span class="settings-label">Native cloud summaries</span>
+              <span class="settings-check-help">Test the new in-extension summary flow instead of opening Claude or ChatGPT.</span>
+            </span>
+            <input id="summaryExperienceV2" type="checkbox" />
+          </label>
         </div>
       </details>
     </div>

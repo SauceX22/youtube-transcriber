@@ -75,8 +75,9 @@ for (const file of COPY_FILES) {
 if (IS_DEV) {
   const manifestPath = path.join(DIST, "manifest.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-  manifest.name = `${manifest.name} (dev)`;
-  manifest.short_name = "Transcriber dev";
+  manifest.name = `${manifest.name} (Native summaries test)`;
+  manifest.short_name = "Transcriber native";
+  manifest.version_name = `${manifest.version}-native-summaries-test`;
 
   // Inject "key" field from local keypair so unpacked dev ext gets a stable ID.
   // Without this, Chrome derives the ID from the install path — meaning every

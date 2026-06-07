@@ -100,6 +100,7 @@ const el = {
   providerPickerIcon: document.getElementById("providerPickerIcon"),
   providerPickerName: document.getElementById("providerPickerName"),
   providerPickerMenu: document.getElementById("providerPickerMenu"),
+  summaryExperienceV2: document.getElementById("summaryExperienceV2"),
   serverSection: document.getElementById("serverSection"),
   serverStatus: document.getElementById("serverStatus"),
   btnStartServer: document.getElementById("btnStartServer"),
@@ -187,6 +188,13 @@ let errorAction = "retry";
 //                               label but surfaced in the progress UI
 let transcribeMode = "transcribe-and-summarize";
 let summarizeProvider = "claude";
+let summaryExperienceV2 = false;
+let nativeSummariesAvailable = false;
+const nativeSummaryCache = new Map();
+const NATIVE_SUMMARY_CACHE_PREFIX = "nativeSummary:";
+const NATIVE_SUMMARY_CACHE_VERSION = "v1";
+let expandedTranscriptId = null;
+let lastRecentRenderHash = "";
 
 // ---------------------------------------------------------------------------
 // Progress bar
@@ -350,6 +358,34 @@ function buildLlmLauncher(transcriptId, videoTitle) {
     e.preventDefault();
     e.stopPropagation();
     toggleLlmDropdown(wrapper, transcriptId, videoTitle);
+  });
+
+  wrapper.appendChild(btn);
+  return wrapper;
+}
+
+function buildNativeSummaryButton(wrap, transcriptId, videoTitle) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "recent-summarize";
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "recent-summarize-btn";
+  btn.title = "Summarize in Transcriber";
+  btn.setAttribute("aria-label", "Summarize in Transcriber");
+  btn.innerHTML = `
+    <svg width="14" height="14" viewBox="0 0 20 20" fill="none"
+         stroke="currentColor" stroke-width="1.75"
+         stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10 2v3M10 15v3M3 10h3M14 10h3"/>
+      <path d="m5.5 5.5 2 2M12.5 12.5l2 2M14.5 5.5l-2 2M7.5 12.5l-2 2"/>
+      <circle cx="10" cy="10" r="1.8"/>
+    </svg>
+  `;
+  btn.addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    await summarizeInline(wrap, transcriptId, videoTitle);
   });
 
   wrapper.appendChild(btn);
@@ -1767,7 +1803,11 @@ async function openTranscript(id) {
 
 async function toggleInlineTranscript(wrap, transcriptId) {
   const expanded = wrap.classList.toggle("expanded");
-  if (!expanded) return;
+  if (!expanded) {
+    if (expandedTranscriptId === transcriptId) expandedTranscriptId = null;
+    return;
+  }
+  expandedTranscriptId = transcriptId;
   const panel = wrap.querySelector(".recent-transcript-inner");
   if (panel.dataset.loaded === "1") return;
   panel.innerHTML = '<div class="recent-transcript-loading"><div class="transcript-spinner" aria-label="Loading"></div></div>';
@@ -1785,8 +1825,135 @@ async function toggleInlineTranscript(wrap, transcriptId) {
       '<div class="recent-transcript-error">Invalid transcript format.</div>';
     return;
   }
-  panel.innerHTML = renderTranscriptBlocks(segments);
+  await hydrateNativeSummary(transcriptId);
+  panel.innerHTML =
+    renderNativeSummaryForTranscript(transcriptId) +
+    renderTranscriptBlocks(segments);
   panel.dataset.loaded = "1";
+}
+
+function nativeSummaryCacheKey(transcriptId) {
+  return `${NATIVE_SUMMARY_CACHE_PREFIX}${NATIVE_SUMMARY_CACHE_VERSION}:${transcriptId}`;
+}
+
+async function hydrateNativeSummary(transcriptId) {
+  if (!summaryExperienceV2 || currentMode !== "cloud") return null;
+  if (nativeSummaryCache.has(transcriptId)) return nativeSummaryCache.get(transcriptId);
+  try {
+    const key = nativeSummaryCacheKey(transcriptId);
+    const stored = await chrome.storage.local.get(key);
+    const entry = stored?.[key];
+    if (entry?.summary_md && entry.cacheVersion === NATIVE_SUMMARY_CACHE_VERSION) {
+      nativeSummaryCache.set(transcriptId, entry);
+      return entry;
+    }
+  } catch {
+    // Non-fatal: transcript rendering should not depend on local summary cache.
+  }
+  return null;
+}
+
+async function persistNativeSummary(transcriptId, summary) {
+  if (!summary?.summary_md) return;
+  nativeSummaryCache.set(transcriptId, summary);
+  try {
+    await chrome.storage.local.set({
+      [nativeSummaryCacheKey(transcriptId)]: {
+        summary_md: summary.summary_md,
+        model: summary.model || null,
+        cached: !!summary.cached,
+        prompt_hash: summary.prompt_hash || null,
+        cacheVersion: NATIVE_SUMMARY_CACHE_VERSION,
+        savedAt: Date.now(),
+      },
+    });
+  } catch {
+    // Rendering already has the in-memory copy; storage persistence is best-effort.
+  }
+}
+
+function renderNativeSummaryForTranscript(transcriptId) {
+  if (!nativeSummaryFlow.isEnabled()) return "";
+  const entry = nativeSummaryCache.get(transcriptId);
+  if (!entry?.summary_md) return "";
+  const meta = entry.cached ? "Cached summary" : "Summary";
+  return `
+    <div class="native-summary-card">
+      <div class="native-summary-kicker">${meta}</div>
+      <div class="native-summary-body">${renderSummaryMarkdown(entry.summary_md)}</div>
+    </div>
+  `;
+}
+
+function renderSummaryMarkdown(markdown) {
+  const lines = String(markdown || "").split(/\r?\n/);
+  const html = [];
+  let inList = false;
+  const closeList = () => {
+    if (inList) {
+      html.push("</ul>");
+      inList = false;
+    }
+  };
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) {
+      closeList();
+      continue;
+    }
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      closeList();
+      html.push(`<h4>${formatSummaryInline(heading[2])}</h4>`);
+      continue;
+    }
+    const bullet = line.match(/^[-*]\s+(.+)$/);
+    if (bullet) {
+      if (!inList) {
+        html.push("<ul>");
+        inList = true;
+      }
+      html.push(`<li>${formatSummaryInline(bullet[1])}</li>`);
+      continue;
+    }
+    closeList();
+    html.push(`<p>${formatSummaryInline(line)}</p>`);
+  }
+  closeList();
+  return html.join("");
+}
+
+function formatSummaryInline(text) {
+  return escapeHtml(text)
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+
+async function summarizeInline(wrap, transcriptId, videoTitle) {
+  const panel = wrap.querySelector(".recent-transcript-inner");
+  wrap.classList.add("expanded");
+  if (panel) {
+    panel.dataset.loaded = "";
+    panel.innerHTML = '<div class="recent-transcript-loading"><div class="transcript-spinner" aria-label="Summarizing"></div></div>';
+  }
+  const res = await sendMsg({ type: "SUMMARIZE_TRANSCRIPT", id: transcriptId });
+  if (!res?.success || !res.data?.summary_md) {
+    const message = res?.error || "Couldn't summarize transcript.";
+    if (panel) {
+      panel.innerHTML = `<div class="recent-transcript-error">${escapeHtml(message)}</div>`;
+    }
+    showPopupToast(message, "error");
+    return null;
+  }
+  await persistNativeSummary(transcriptId, res.data);
+  if (panel) {
+    panel.dataset.loaded = "";
+    wrap.classList.remove("expanded");
+    await toggleInlineTranscript(wrap, transcriptId);
+  }
+  showPopupToast(videoTitle ? `Summarized ${videoTitle}` : "Summary ready");
+  return res.data;
 }
 
 function mergeSegmentsForDisplay(segments) {
@@ -1998,6 +2165,10 @@ function recentListHash(items) {
   return items.map((t) => `${t.id}:${t.title}:${t.createdAt}`).join("|");
 }
 
+function recentRenderHash(items) {
+  return `${recentListHash(items)}:native=${nativeSummaryFlow.isEnabled()}`;
+}
+
 async function loadRecent() {
   const modeRes = await sendMsg({ type: "GET_SETTINGS" });
   const mode = modeRes?.data?.mode || "cloud";
@@ -2026,7 +2197,7 @@ async function loadRecent() {
     return;
   }
   // Skip DOM churn when nothing changed — cached render is already correct.
-  if (cached && recentListHash(cached) === recentListHash(res.data) && !justCompletedId) {
+  if (lastRecentRenderHash === recentRenderHash(res.data) && !justCompletedId) {
     return;
   }
   renderRecentList(res.data);
@@ -2051,6 +2222,7 @@ function renderRecentSkeleton(rows = 3) {
 
 function renderRecentList(items) {
   el.recentSection.hidden = false;
+  lastRecentRenderHash = recentRenderHash(items);
   el.recentList.innerHTML = "";
   for (const t of items) {
     const isNew = justCompletedId && t.id === justCompletedId;
@@ -2081,8 +2253,12 @@ function renderRecentList(items) {
         <path d="M7 4l6 6-6 6"/>
       </svg>` : ""}
     `;
-    // Summarize-with-LLM button — hover-reveal per row, mirrors web-app LlmLauncher
-    item.appendChild(buildLlmLauncher(t.id, t.title));
+    if (nativeSummaryFlow.isEnabled()) {
+      item.appendChild(buildNativeSummaryButton(wrap, t.id, t.title));
+    } else {
+      // Summarize-with-LLM button — hover-reveal per row, mirrors web-app LlmLauncher
+      item.appendChild(buildLlmLauncher(t.id, t.title));
+    }
     // ⋯ menu — send to destinations, download, copy, open in web app (YTT-205 §3)
     item.appendChild(buildRowActionsMenu(t.id, t.title));
 
@@ -2095,6 +2271,10 @@ function renderRecentList(items) {
     wrap.appendChild(item);
     wrap.appendChild(panel);
     el.recentList.appendChild(wrap);
+
+    if (t.id === expandedTranscriptId && !isNew) {
+      toggleInlineTranscript(wrap, t.id);
+    }
 
     // Two-phase animation: visual fade, then smooth spatial collapse
     if (isNew) {
@@ -2241,7 +2421,12 @@ async function init() {
   try {
     [tabResult, syncStash, authCache] = await Promise.all([
       chrome.tabs.query({ active: true, currentWindow: true }),
-      chrome.storage.sync.get(["mode"]),
+      chrome.storage.sync.get([
+        "mode",
+        "transcribeMode",
+        "summarizeProvider",
+        "summaryExperienceV2",
+      ]),
       getCachedAuth(),
     ]);
   } catch { /* ignore */ }
@@ -2251,7 +2436,10 @@ async function init() {
   currentMode = mode;
   // Hydrate the YTT-259 transcribe-mode setting alongside `mode` so the
   // primary button label is correct on first paint.
-  loadTranscribeAction();
+  transcribeMode = syncStash?.transcribeMode || "transcribe-and-summarize";
+  summarizeProvider = syncStash?.summarizeProvider || "claude";
+  summaryExperienceV2 = !!syncStash?.summaryExperienceV2;
+  applyTranscribeActionUI();
   // Only treat the cache as a hard "they are signed in" signal — used to
   // broaden the cold-start retry below. We always paint optimistically
   // regardless, so the panel never shows a dark void while CHECK_SERVICE
@@ -2333,7 +2521,12 @@ async function init() {
       isTranscribing = false;
       stopProgress();
       stopPolling();
+      const summaryServiceRes = await sendMsg({ type: "CHECK_SERVICE" });
+      if (initWasSuperseded(thisInit)) return;
+      nativeSummariesAvailable =
+        !!summaryServiceRes?.data?.nativeSummariesAvailable;
       await sendMsg({ type: "CLEAR_TRANSCRIPTION" });
+      await maybeNativeSummarizeAfterTranscribe(pending.result.id, pending.title || "");
       showCompletedAndReturn(pending.result.id);
       return;
     }
@@ -2453,6 +2646,13 @@ async function init() {
   // Confirmed online. Refresh auth cache for cloud so next reopen paints
   // optimistically without the round-trip gating.
   if (mode === "cloud") setCachedAuth(true);
+  const nextNativeSummariesAvailable =
+    !!serviceRes?.data?.nativeSummariesAvailable;
+  if (nextNativeSummariesAvailable !== nativeSummariesAvailable) {
+    nativeSummariesAvailable = nextNativeSummariesAvailable;
+    applyTranscribeActionUI();
+    loadRecent();
+  }
 
   startHeartbeat();
 
@@ -2503,6 +2703,8 @@ function pollTranscriptionStatus() {
       stopPolling();
       stopProgress();
       await sendMsg({ type: "CLEAR_TRANSCRIPTION" });
+      await nativeSummaryFlow.refreshAvailability();
+      await maybeNativeSummarizeAfterTranscribe(pending.result.id, pending.title || "");
       showCompletedAndReturn(pending.result.id);
     } else if (pending.status === "error") {
       if (suppressPollFinalization) {
@@ -2591,6 +2793,7 @@ async function doTranscribe() {
     if (isCloudProcessing) {
       el.progressText.textContent = res.data.progress || "Transcription in progress...";
     }
+    await nativeSummaryFlow.refreshAvailability();
     return;
   }
 
@@ -2601,10 +2804,14 @@ async function doTranscribe() {
 
   if (res?.success && res.data?.id) {
     await sendMsg({ type: "CLEAR_TRANSCRIPTION" });
+    await nativeSummaryFlow.refreshAvailability();
+    const useNativeSummary = nativeSummaryFlow.shouldAutoSummarize();
     // YTT-259: chain summarize when the user has set the button mode to
     // "transcribe-and-summarize" or "summarize". Same downstream flow in
     // both cases — the only difference is the button label they clicked.
-    if (transcribeMode !== "transcribe") {
+    if (useNativeSummary) {
+      await maybeNativeSummarizeAfterTranscribe(res.data.id, pageInfo.title || "");
+    } else if (transcribeMode !== "transcribe") {
       const provider = LLM_PROVIDERS.find((p) => p.id === summarizeProvider);
       if (provider) {
         // Fire-and-forget: handoff opens a new tab; the popup can then
@@ -2637,6 +2844,43 @@ async function doTranscribe() {
     }
     showErrorState(res?.error);
   }
+}
+
+const nativeSummaryFlow = {
+  isEnabled() {
+    return summaryExperienceV2 && currentMode === "cloud" && nativeSummariesAvailable;
+  },
+  shouldAutoSummarize() {
+    return this.isEnabled() && transcribeMode !== "transcribe";
+  },
+  async refreshAvailability() {
+    if (!summaryExperienceV2 || currentMode !== "cloud") return;
+    const serviceRes = await sendMsg({ type: "CHECK_SERVICE" });
+    const nextNativeSummariesAvailable =
+      !!serviceRes?.data?.nativeSummariesAvailable;
+    if (nextNativeSummariesAvailable !== nativeSummariesAvailable) {
+      nativeSummariesAvailable = nextNativeSummariesAvailable;
+      applyTranscribeActionUI();
+      loadRecent();
+    }
+  },
+};
+
+async function maybeNativeSummarizeAfterTranscribe(transcriptId, videoTitle) {
+  if (!nativeSummaryFlow.shouldAutoSummarize()) return null;
+  el.transcribingTitle.textContent = videoTitle || "Summarizing...";
+  showState("Transcribing");
+  startProgress({ writeLabels: false });
+  el.progressText.textContent = "Writing summary...";
+  const res = await sendMsg({ type: "SUMMARIZE_TRANSCRIPT", id: transcriptId });
+  stopProgress();
+  if (!res?.success || !res.data?.summary_md) {
+    const message = res?.error || "Summary failed. Transcript is ready.";
+    showPopupToast(message, "error");
+    return null;
+  }
+  await persistNativeSummary(transcriptId, res.data);
+  return res.data;
 }
 
 async function processQueue() {
@@ -2876,6 +3120,7 @@ function showSettingsView() {
   el.queuePrompt.hidden = true;
   el.queueList.hidden = true;
   el.settingsPanel.hidden = false;
+  el.settingsPanel.classList.add("is-loading");
   el.btnNavSettings.classList.add("active");
   el.btnNavLibrary.classList.remove("active");
   loadSettings();
@@ -2904,11 +3149,16 @@ el.btnNavLibrary.addEventListener("click", () => {
 });
 
 async function loadSettings() {
-  const res = await sendMsg({ type: "GET_SETTINGS" });
-  if (!res?.success) return;
-  const { mode } = res.data;
-  setModeUI(mode);
-  await loadTranscribeAction();
+  el.settingsPanel.classList.add("is-loading");
+  try {
+    const res = await sendMsg({ type: "GET_SETTINGS" });
+    if (!res?.success) return;
+    const { mode } = res.data;
+    await setModeUI(mode);
+    await loadTranscribeAction();
+  } finally {
+    el.settingsPanel.classList.remove("is-loading");
+  }
 }
 
 // YTT-259: Load the user's primary-button mode + preferred summarize
@@ -2920,9 +3170,14 @@ async function loadSettings() {
 // seeding from it surprised users (they picked ChatGPT once and didn't expect
 // it to become the auto-summarize default).
 async function loadTranscribeAction() {
-  const sync = await chrome.storage.sync.get(["transcribeMode", "summarizeProvider"]);
+  const sync = await chrome.storage.sync.get([
+    "transcribeMode",
+    "summarizeProvider",
+    "summaryExperienceV2",
+  ]);
   transcribeMode = sync.transcribeMode || "transcribe-and-summarize";
   summarizeProvider = sync.summarizeProvider || "claude";
+  summaryExperienceV2 = !!sync.summaryExperienceV2;
   applyTranscribeActionUI();
 }
 
@@ -2931,8 +3186,11 @@ function applyTranscribeActionUI() {
   el.modeTranscribe.checked = transcribeMode === "transcribe";
   el.modeTranscribeSummarize.checked = transcribeMode === "transcribe-and-summarize";
   el.modeSummarize.checked = transcribeMode === "summarize";
+  el.summaryExperienceV2.checked = summaryExperienceV2;
   // Provider picker only visible when summarize is in play
-  el.summarizeProviderRow.hidden = transcribeMode === "transcribe";
+  el.summarizeProviderRow.hidden =
+    transcribeMode === "transcribe" ||
+    nativeSummaryFlow.isEnabled();
   applyProviderPickerTrigger();
   // Primary button label morphs to match the mode
   updateTranscribeButtonLabel();
@@ -3027,20 +3285,28 @@ el.modeTranscribeSummarize.addEventListener("change", () => {
 el.modeSummarize.addEventListener("change", () => {
   if (el.modeSummarize.checked) saveTranscribeMode("summarize");
 });
+el.summaryExperienceV2.addEventListener("change", async () => {
+  summaryExperienceV2 = !!el.summaryExperienceV2.checked;
+  await chrome.storage.sync.set({ summaryExperienceV2 });
+  await nativeSummaryFlow.refreshAvailability();
+  applyTranscribeActionUI();
+  loadRecent();
+});
 
-function setModeUI(mode) {
+async function setModeUI(mode) {
   currentSettingsMode = mode;
   el.btnModeLocal.classList.toggle("active", mode === "local");
   el.btnModeCloud.classList.toggle("active", mode === "cloud");
   el.cloudAccountSection.hidden = mode !== "cloud";
+  applyTranscribeActionUI();
   applyFooterLink(mode);
   // Server stop control: only useful in self-hosted mode AND when the native
   // host is installed (otherwise we have no way to stop). detectNativeHost
   // sets nativeHostAvailable; if it hasn't run yet, fire-and-forget.
-  refreshServerSection(mode);
+  await refreshServerSection(mode);
   // Destinations always render. Obsidian is client-side (works in any mode);
   // cloud-only adapters show as teasers with a Sign in CTA in local mode.
-  renderDestinationsSettings();
+  await renderDestinationsSettings();
 }
 
 async function refreshServerSection(mode) {
@@ -3221,7 +3487,7 @@ async function switchMode(newMode) {
   // self-hosted → cloud only showed Obsidian (cloud branch never ran);
   // cloud → self-hosted showed Notion as a "Cloud unreachable" teaser
   // (the cloud branch ran with a defunct cloud server, fell back to teasers).
-  setModeUI(newMode);
+  await setModeUI(newMode);
   // Mode toggles live inside the settings panel — keep the user there.
   // init() (which collapses settings into the library view) runs when the
   // user navigates back via the Library nav button.
