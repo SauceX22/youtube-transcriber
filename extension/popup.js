@@ -94,7 +94,6 @@ const el = {
   actionSection: document.getElementById("actionSection"),
   modeTranscribe: document.getElementById("modeTranscribe"),
   modeTranscribeSummarize: document.getElementById("modeTranscribeSummarize"),
-  modeSummarize: document.getElementById("modeSummarize"),
   summarizeProviderRow: document.getElementById("summarizeProviderRow"),
   providerPickerTrigger: document.getElementById("providerPickerTrigger"),
   providerPickerIcon: document.getElementById("providerPickerIcon"),
@@ -183,9 +182,6 @@ let errorAction = "retry";
 // don't have to await an async read.
 //   transcribe                — current behavior (default)
 //   transcribe-and-summarize  — chain summarize after transcribe
-//   summarize                 — same as above; button labelled "Summarize"
-//                               instead, transcript step is hidden in the
-//                               label but surfaced in the progress UI
 let transcribeMode = "transcribe-and-summarize";
 let summarizeProvider = "claude";
 let summaryExperienceV2 = false;
@@ -2436,7 +2432,8 @@ async function init() {
   currentMode = mode;
   // Hydrate the YTT-259 transcribe-mode setting alongside `mode` so the
   // primary button label is correct on first paint.
-  transcribeMode = syncStash?.transcribeMode || "transcribe-and-summarize";
+  transcribeMode =
+    syncStash?.transcribeMode === "transcribe" ? "transcribe" : "transcribe-and-summarize";
   summarizeProvider = syncStash?.summarizeProvider || "claude";
   summaryExperienceV2 = !!syncStash?.summaryExperienceV2;
   applyTranscribeActionUI();
@@ -2807,8 +2804,7 @@ async function doTranscribe() {
     await nativeSummaryFlow.refreshAvailability();
     const useNativeSummary = nativeSummaryFlow.shouldAutoSummarize();
     // YTT-259: chain summarize when the user has set the button mode to
-    // "transcribe-and-summarize" or "summarize". Same downstream flow in
-    // both cases — the only difference is the button label they clicked.
+    // "transcribe-and-summarize".
     if (useNativeSummary) {
       await maybeNativeSummarizeAfterTranscribe(res.data.id, pageInfo.title || "");
     } else if (transcribeMode !== "transcribe") {
@@ -3174,7 +3170,8 @@ async function loadTranscribeAction() {
     "summarizeProvider",
     "summaryExperienceV2",
   ]);
-  transcribeMode = sync.transcribeMode || "transcribe-and-summarize";
+  transcribeMode =
+    sync.transcribeMode === "transcribe" ? "transcribe" : "transcribe-and-summarize";
   summarizeProvider = sync.summarizeProvider || "claude";
   summaryExperienceV2 = !!sync.summaryExperienceV2;
   applyTranscribeActionUI();
@@ -3184,7 +3181,6 @@ function applyTranscribeActionUI() {
   // Radio state
   el.modeTranscribe.checked = transcribeMode === "transcribe";
   el.modeTranscribeSummarize.checked = transcribeMode === "transcribe-and-summarize";
-  el.modeSummarize.checked = transcribeMode === "summarize";
   el.summaryExperienceV2.checked = summaryExperienceV2;
   // Provider picker only visible when summarize is in play
   el.summarizeProviderRow.hidden =
@@ -3247,9 +3243,7 @@ buildProviderPickerMenu();
 
 function updateTranscribeButtonLabel() {
   if (!el.btnTranscribeLabel) return;
-  if (transcribeMode === "summarize") {
-    el.btnTranscribeLabel.textContent = "Summarize";
-  } else if (transcribeMode === "transcribe-and-summarize") {
+  if (transcribeMode === "transcribe-and-summarize") {
     el.btnTranscribeLabel.textContent = "Transcribe & Summarize";
   } else {
     el.btnTranscribeLabel.textContent = "Transcribe";
@@ -3280,9 +3274,6 @@ el.modeTranscribe.addEventListener("change", () => {
 });
 el.modeTranscribeSummarize.addEventListener("change", () => {
   if (el.modeTranscribeSummarize.checked) saveTranscribeMode("transcribe-and-summarize");
-});
-el.modeSummarize.addEventListener("change", () => {
-  if (el.modeSummarize.checked) saveTranscribeMode("summarize");
 });
 el.summaryExperienceV2.addEventListener("change", async () => {
   summaryExperienceV2 = !!el.summaryExperienceV2.checked;
