@@ -941,7 +941,7 @@ async function renderDestinationsSettings() {
   // this sync paint, the section header is visible for one microtask + the
   // storage read with an empty list underneath. Particularly noticeable after
   // a mode switch (cache cleared) or when the persisted TTL has expired.
-  if (!destinationsCache) {
+  if (!destinationsCache && !el.settingsPanel.dataset.skipSkeleton) {
     renderDestinationsSkeleton();
   }
 
@@ -3120,7 +3120,6 @@ function showSettingsView() {
   el.queuePrompt.hidden = true;
   el.queueList.hidden = true;
   el.settingsPanel.hidden = false;
-  el.settingsPanel.classList.add("is-loading");
   el.btnNavSettings.classList.add("active");
   el.btnNavLibrary.classList.remove("active");
   loadSettings();
@@ -3149,7 +3148,7 @@ el.btnNavLibrary.addEventListener("click", () => {
 });
 
 async function loadSettings() {
-  el.settingsPanel.classList.add("is-loading");
+  el.settingsPanel.dataset.skipSkeleton = "true";
   try {
     const res = await sendMsg({ type: "GET_SETTINGS" });
     if (!res?.success) return;
@@ -3157,7 +3156,7 @@ async function loadSettings() {
     await setModeUI(mode);
     await loadTranscribeAction();
   } finally {
-    el.settingsPanel.classList.remove("is-loading");
+    delete el.settingsPanel.dataset.skipSkeleton;
   }
 }
 
