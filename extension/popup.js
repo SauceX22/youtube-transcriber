@@ -94,6 +94,7 @@ const el = {
   actionSection: document.getElementById("actionSection"),
   modeTranscribe: document.getElementById("modeTranscribe"),
   modeTranscribeSummarize: document.getElementById("modeTranscribeSummarize"),
+  summaryDestinationRow: document.getElementById("summaryDestinationRow"),
   summarizeProviderRow: document.getElementById("summarizeProviderRow"),
   providerPickerTrigger: document.getElementById("providerPickerTrigger"),
   providerPickerIcon: document.getElementById("providerPickerIcon"),
@@ -367,8 +368,8 @@ function buildNativeSummaryButton(wrap, transcriptId, videoTitle) {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "recent-summarize-btn";
-  btn.title = "Summarize in Transcriber";
-  btn.setAttribute("aria-label", "Summarize in Transcriber");
+  btn.title = "Show summary in Transcriber";
+  btn.setAttribute("aria-label", "Show summary in Transcriber");
   btn.innerHTML = `
     <svg width="14" height="14" viewBox="0 0 20 20" fill="none"
          stroke="currentColor" stroke-width="1.75"
@@ -2435,7 +2436,7 @@ async function init() {
   transcribeMode =
     syncStash?.transcribeMode === "transcribe" ? "transcribe" : "transcribe-and-summarize";
   summarizeProvider = syncStash?.summarizeProvider || "claude";
-  summaryExperienceV2 = !!syncStash?.summaryExperienceV2;
+  summaryExperienceV2 = syncStash?.summaryExperienceV2 !== false;
   applyTranscribeActionUI();
   // Only treat the cache as a hard "they are signed in" signal — used to
   // broaden the cold-start retry below. We always paint optimistically
@@ -3158,12 +3159,11 @@ async function loadSettings() {
 
 // YTT-259: Load the user's primary-button mode + preferred summarize
 // provider from chrome.storage.sync. First-run default is Transcribe &
-// Summarize because the strongest user-facing value is transcript-to-LLM
-// handoff, and the explicit label makes the transcript step clear. Users can
+// Summarize because the strongest user-facing value is transcript plus
+// summary, and the explicit label makes the transcript step clear. Users can
 // still switch back to transcript-only in Settings. Provider defaults to
-// Claude — the per-row launcher's last-used has its own UX context and
-// seeding from it surprised users (they picked ChatGPT once and didn't expect
-// it to become the auto-summarize default).
+// Claude for the secondary external handoff; the per-row launcher's last-used
+// has its own UX context and seeding from it surprised users.
 async function loadTranscribeAction() {
   const sync = await chrome.storage.sync.get([
     "transcribeMode",
@@ -3173,7 +3173,7 @@ async function loadTranscribeAction() {
   transcribeMode =
     sync.transcribeMode === "transcribe" ? "transcribe" : "transcribe-and-summarize";
   summarizeProvider = sync.summarizeProvider || "claude";
-  summaryExperienceV2 = !!sync.summaryExperienceV2;
+  summaryExperienceV2 = sync.summaryExperienceV2 !== false;
   applyTranscribeActionUI();
 }
 
@@ -3182,10 +3182,11 @@ function applyTranscribeActionUI() {
   el.modeTranscribe.checked = transcribeMode === "transcribe";
   el.modeTranscribeSummarize.checked = transcribeMode === "transcribe-and-summarize";
   el.summaryExperienceV2.checked = summaryExperienceV2;
-  // Provider picker only visible when summarize is in play
-  el.summarizeProviderRow.hidden =
-    transcribeMode === "transcribe" ||
-    nativeSummaryFlow.isEnabled();
+  const usesSummary = transcribeMode === "transcribe-and-summarize";
+  el.summaryDestinationRow.hidden = !usesSummary;
+  // Provider picker is the external handoff choice; native summaries remain
+  // the default destination when available.
+  el.summarizeProviderRow.hidden = !usesSummary;
   applyProviderPickerTrigger();
   // Primary button label morphs to match the mode
   updateTranscribeButtonLabel();
