@@ -94,7 +94,6 @@ const el = {
   actionSection: document.getElementById("actionSection"),
   modeTranscribe: document.getElementById("modeTranscribe"),
   modeTranscribeSummarize: document.getElementById("modeTranscribeSummarize"),
-  modeSummarize: document.getElementById("modeSummarize"),
   summarizeProviderRow: document.getElementById("summarizeProviderRow"),
   providerPickerTrigger: document.getElementById("providerPickerTrigger"),
   providerPickerIcon: document.getElementById("providerPickerIcon"),
@@ -170,6 +169,7 @@ let heartbeatTimer = null;
 // (the await caused a leftward bar sweep when the indeterminate prepaint
 // transitioned back to 0%).
 let currentMode = "cloud";
+let userActionInProgress = false;
 // Mutable label flag read by the progressTimer tick. Cloud mode flips this
 // off so pollTranscriptionStatus owns label text without timer overwrites.
 let progressWriteLabels = true;
@@ -180,13 +180,27 @@ let errorAction = "retry";
 // YTT-259: primary button mode + chosen summarize provider. Persisted in
 // chrome.storage.sync. Mirrored here so doTranscribe / button-label updates
 // don't have to await an async read.
-//   transcribe                — current behavior (default)
+//   transcribe                — transcript only
 //   transcribe-and-summarize  — chain summarize after transcribe
-//   summarize                 — same as above; button labelled "Summarize"
-//                               instead, transcript step is hidden in the
-//                               label but surfaced in the progress UI
 let transcribeMode = "transcribe-and-summarize";
 let summarizeProvider = "claude";
+
+function pageInfoFromTab(tab, stored = {}) {
+  const url = tab?.url || stored.url || "";
+  const tabVideoId = extractVideoId(url);
+  const videoId = tabVideoId || stored.videoId;
+  const storedMatchesTab =
+    (!!stored.url && stored.url === url) ||
+    (!!stored.videoId && !!tabVideoId && stored.videoId === tabVideoId);
+  return {
+    url,
+    title: storedMatchesTab ? stored.title || tab?.title || "" : tab?.title || "",
+    author: storedMatchesTab ? stored.author || "" : "",
+    channelUrl: storedMatchesTab ? stored.channelUrl || "" : "",
+    videoId,
+    isLive: storedMatchesTab ? !!stored.isLive : false,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Progress bar
@@ -336,7 +350,8 @@ function buildLlmLauncher(transcriptId, videoTitle) {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "recent-summarize-btn";
-  btn.title = "Summarize with LLM...";
+  btn.title = "Summarize with Claude or ChatGPT";
+  btn.setAttribute("aria-label", "Summarize with Claude or ChatGPT");
   btn.innerHTML = `
     <svg width="14" height="14" viewBox="0 0 20 20" fill="none"
          stroke="currentColor" stroke-width="1.75"
@@ -752,11 +767,9 @@ const LOCAL_DESTINATION_ICONS = {
   "obsidian-scheme": "icons/obsidian.svg",
 };
 
-// Setup-help docs URL — points at the README "Connectors" section for now
-// (safe, exists today). Swap to dedicated transcribed.dev/docs pages once
-// YTT-257 / YTT-258 ship per-connector guides.
+// Setup-help docs URL — dedicated destination guide for Notion + Obsidian.
 const CONNECTOR_SETUP_HELP_URL =
-  "https://github.com/lifesized/youtube-transcriber#connectors--send-transcripts-to-obsidian-or-notion";
+  "https://www.transcribed.dev/docs/destinations";
 
 // Client-side adapters — available in any mode, no cloud account required.
 // Obsidian's "connected" state is derived from whether the user has saved
@@ -772,6 +785,13 @@ const CLIENT_SIDE_ADAPTERS = [
 const CLOUD_TEASER_ADAPTERS = [
   { adapterId: "notion", name: "Notion", icon: "", cloudOnly: true, setupHelpUrl: CONNECTOR_SETUP_HELP_URL },
 ];
+
+const CLOUD_CONNECTOR_GATE = {
+  adapterId: "cloud-connectors",
+  name: "Notion",
+  icon: "",
+  cloudGate: true,
+};
 
 async function fetchDestinations() {
   if (destinationsLoading) return destinationsCache;
@@ -809,7 +829,10 @@ async function fetchDestinations() {
         if (res?.data?.authError) cloudReason = "authError";
         else if (res?.data?.unavailable) cloudReason = "unavailable";
         else cloudReason = "unknown";
-        cloudAdapters = CLOUD_TEASER_ADAPTERS;
+        // Signed-out users should not see half-active cloud OAuth rows. Gate
+        // them behind a single cloud sign-in CTA so Notion auth cannot race
+        // against cloud account auth (YTT-323).
+        cloudAdapters = cloudReason === "authError" ? [] : CLOUD_TEASER_ADAPTERS;
       }
     } else {
       // Self-hosted mode — hide cloud-only adapters entirely. They can't
@@ -842,6 +865,16 @@ function connectedDestinations() {
   return (destinationsCache?.destinations || []).filter(
     (d) => d.connected && !d.needsReauth
   );
+}
+
+function setupDestinations() {
+  const setup = (destinationsCache?.destinations || []).filter(
+    (d) => !d.connected || d.needsReauth
+  );
+  if (destinationsCache?.cloudReason === "authError") {
+    setup.unshift(CLOUD_CONNECTOR_GATE);
+  }
+  return setup;
 }
 
 function renderDestinationsSkeleton(rows = 2) {
@@ -890,6 +923,9 @@ function paintDestinationsList(payload) {
   for (const d of list) {
     el.destinationsList.appendChild(buildDestinationRow(d, ctx));
   }
+  if (payload.cloudReason === "authError") {
+    el.destinationsList.appendChild(buildCloudConnectorsGate());
+  }
 }
 
 async function renderDestinationsSettings() {
@@ -905,7 +941,7 @@ async function renderDestinationsSettings() {
   // this sync paint, the section header is visible for one microtask + the
   // storage read with an empty list underneath. Particularly noticeable after
   // a mode switch (cache cleared) or when the persisted TTL has expired.
-  if (!destinationsCache) {
+  if (!destinationsCache && !el.settingsPanel.dataset.skipSkeleton) {
     renderDestinationsSkeleton();
   }
 
@@ -979,19 +1015,6 @@ function buildDestinationRow(d, ctx) {
   text.appendChild(name);
   text.appendChild(status);
 
-  // Setup-help link — surfaced only when the connector isn't usable yet.
-  // Hidden once connected so the row stays clean for happy-path users.
-  // Hidden for locked rows too — Upgrade is the only relevant CTA there.
-  if (d.setupHelpUrl && !d.connected && !d.locked) {
-    const help = document.createElement("a");
-    help.className = "destinations-row-help";
-    help.href = d.setupHelpUrl;
-    help.target = "_blank";
-    help.rel = "noopener noreferrer";
-    help.textContent = "Setup help";
-    text.appendChild(help);
-  }
-
   let actionEl;
 
   if (d.locked) {
@@ -1023,7 +1046,6 @@ function buildDestinationRow(d, ctx) {
         }
       });
     } else {
-      status.textContent = "Add vault name below";
       actionEl = makeDestinationToggle(false, async () => {
         const { obsidianVaultName } = await chrome.storage.sync.get(
           "obsidianVaultName"
@@ -1044,15 +1066,6 @@ function buildDestinationRow(d, ctx) {
     // Cloud adapter, but the destinations fetch didn't succeed. Surface the
     // actual reason so the user knows what to do next — the common case is
     // "signed out", but it can also be offline / cloud 500.
-    if (cloudReason === "authError") {
-      status.textContent = "Session expired — sign in again";
-    } else if (cloudReason === "unavailable") {
-      status.textContent = "Cloud unreachable — retry shortly";
-    } else if (cloudReason === "local") {
-      status.textContent = "Switch to Cloud mode to use";
-    } else {
-      status.textContent = "Sign in to transcribed.dev to use";
-    }
     actionEl = document.createElement("a");
     actionEl.href = "https://www.transcribed.dev/auth/login";
     actionEl.target = "_blank";
@@ -1083,6 +1096,44 @@ function buildDestinationRow(d, ctx) {
   frag.appendChild(row);
 
   return frag;
+}
+
+function buildCloudConnectorsGate() {
+  const row = document.createElement("div");
+  row.className = "destinations-row destinations-cloud-gate";
+
+  const icon = document.createElement("span");
+  icon.className = "destinations-row-icon";
+
+  const text = document.createElement("div");
+  text.className = "destinations-row-text";
+  const name = document.createElement("span");
+  name.className = "destinations-row-name";
+  name.textContent = "Notion";
+  const status = document.createElement("span");
+  status.className = "destinations-row-status";
+  text.appendChild(name);
+  text.appendChild(status);
+
+  const action = document.createElement("button");
+  action.type = "button";
+  action.className = "destinations-row-action";
+  action.textContent = "Sign in";
+  action.addEventListener("click", signInForCloudConnectors);
+
+  row.appendChild(icon);
+  row.appendChild(text);
+  row.appendChild(action);
+  return row;
+}
+
+async function signInForCloudConnectors() {
+  const res = await sendMsg({ type: "OPEN_GOOGLE_SIGNIN" });
+  if (res?.success) {
+    showPopupToast("Sign in opened. Connectors will refresh when you return.", "info");
+  } else {
+    showPopupToast(res?.error || "Couldn't open sign in", "error");
+  }
 }
 
 // Mirrors the Toggle component in components/settings-panel.tsx — same shape,
@@ -1202,6 +1253,41 @@ function buildRowActionsMenu(transcriptId, videoTitle) {
   return wrapper;
 }
 
+function buildProcessingClearButton(transcriptId, title) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "recent-clear-processing";
+  btn.title = "Clear processing item";
+  btn.setAttribute("aria-label", "Clear processing item");
+  btn.innerHTML = `
+    <span class="recent-clear-processing-label">Clear</span>
+  `;
+  btn.addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    btn.disabled = true;
+    btn.closest(".recent-item-wrap")?.classList.add("recent-item-clearing");
+    const res = await sendMsg({ type: "DELETE_TRANSCRIPT", id: transcriptId });
+    if (res?.success) {
+      showPopupToast(`Cleared ${title || "processing item"}`, "info");
+      await reconcileAfterProcessingClear();
+      return;
+    }
+    btn.disabled = false;
+    btn.closest(".recent-item-wrap")?.classList.remove("recent-item-clearing");
+    showPopupToast(res?.error || "Couldn't clear item", "error");
+  });
+  return btn;
+}
+
+async function reconcileAfterProcessingClear() {
+  isTranscribing = false;
+  suppressPollFinalization = false;
+  stopPolling();
+  stopProgress();
+  await init();
+}
+
 async function toggleRowActionsMenu(wrapper, transcriptId, videoTitle) {
   if (rowActionsOpen && rowActionsOpen._wrapper === wrapper) {
     closeRowActionsMenu();
@@ -1223,6 +1309,7 @@ async function toggleRowActionsMenu(wrapper, transcriptId, videoTitle) {
   menu.className = "row-actions-menu";
 
   const connected = connectedDestinations();
+  const setup = setupDestinations();
 
   if (connected.length > 0) {
     for (const d of connected) {
@@ -1309,6 +1396,18 @@ async function toggleRowActionsMenu(wrapper, transcriptId, videoTitle) {
     menu.appendChild(separator());
   }
 
+  if (setup.length > 0) {
+    for (const d of setup) {
+      menu.appendChild(
+        buildRowActionItem(setupLabelForDestination(d), iconFor(d), async (item) => {
+          item.disabled = true;
+          await openDestinationSetup(d, item);
+        })
+      );
+    }
+    menu.appendChild(separator());
+  }
+
   menu.appendChild(
     buildRowActionItem("Download as markdown", downloadIcon(), async () => {
       closeRowActionsMenu();
@@ -1335,14 +1434,6 @@ async function toggleRowActionsMenu(wrapper, transcriptId, videoTitle) {
     })
   );
 
-  if (connected.length === 0) {
-    const note = document.createElement("div");
-    note.className = "row-actions-menu-empty";
-    note.textContent = "Connect a destination in Settings to send";
-    menu.appendChild(separator());
-    menu.appendChild(note);
-  }
-
   menu.addEventListener("click", (e) => e.stopPropagation());
   document.body.appendChild(menu);
   wrapper.classList.add("open");
@@ -1363,6 +1454,69 @@ async function toggleRowActionsMenu(wrapper, transcriptId, videoTitle) {
   setTimeout(() => {
     document.addEventListener("mousedown", onOutsideRowActionsClick, true);
   }, 0);
+}
+
+function setupLabelForDestination(d) {
+  const name = d.name || d.adapterId;
+  if (d.cloudGate) return "Sign in for Notion";
+  if (d.locked) return `Upgrade for ${name}`;
+  if (d.needsReauth) return `Reconnect ${name}`;
+  if (d.adapterId === "obsidian-scheme") return `Set up ${name}`;
+  return `Connect ${name}`;
+}
+
+async function openDestinationSetup(d, item) {
+  const adapterId = d.adapterId;
+  const name = d.name || adapterId;
+
+  if (d.cloudGate) {
+    closeRowActionsMenu();
+    await signInForCloudConnectors();
+    return;
+  }
+
+  if (d.locked) {
+    const url = d.upgradeUrl
+      ? `https://www.transcribed.dev${d.upgradeUrl}`
+      : "https://www.transcribed.dev/pricing";
+    closeRowActionsMenu();
+    try {
+      await openNextToCurrentTab(url);
+    } catch {
+      // Non-fatal — user can still reach pricing from Settings.
+    }
+    return;
+  }
+
+  if (adapterId === "obsidian-scheme") {
+    closeRowActionsMenu();
+    showSettingsView();
+    setTimeout(() => {
+      el.obsidianVaultInput?.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.obsidianVaultInput?.focus();
+    }, 200);
+    showPopupToast("Add your Obsidian vault name to enable sending", "info");
+    return;
+  }
+
+  if (destinationsCache?.cloudReady && !d.clientSide) {
+    item.setAttribute("data-sending", "true");
+    const res = await sendMsg({ type: "START_DESTINATION_OAUTH", adapterId });
+    closeRowActionsMenu();
+    if (res?.success && res.data?.ok) {
+      pollForConnection(adapterId);
+      showPopupToast(`Connecting ${name}...`, "info");
+    } else {
+      const err = res?.data?.error || res?.error || `Couldn't connect ${name}`;
+      showPopupToast(err, "error");
+      showSettingsView();
+    }
+    return;
+  }
+
+  closeRowActionsMenu();
+  showSettingsView();
+  showPopupToast(`Open Connectors to set up ${name}`, "info");
 }
 
 function buildRowActionItem(label, iconHtml, onClick) {
@@ -1751,6 +1905,10 @@ function formatDate(iso) {
   });
 }
 
+function formatRecentMeta(item) {
+  return [item.author?.trim(), formatDate(item.createdAt)].filter(Boolean).join(" · ");
+}
+
 // ---------------------------------------------------------------------------
 // Open transcript in app — reuse existing app tab
 // ---------------------------------------------------------------------------
@@ -1995,7 +2153,7 @@ async function maybeFindCachedTranscript(videoId, mode) {
 
 function recentListHash(items) {
   if (!Array.isArray(items)) return "";
-  return items.map((t) => `${t.id}:${t.title}:${t.createdAt}`).join("|");
+  return items.map((t) => `${t.id}:${t.status || ""}:${t.title}:${t.author || ""}:${t.createdAt}`).join("|");
 }
 
 async function loadRecent() {
@@ -2054,19 +2212,25 @@ function renderRecentList(items) {
   el.recentList.innerHTML = "";
   for (const t of items) {
     const isNew = justCompletedId && t.id === justCompletedId;
+    const isProcessing = t.status === "processing";
 
     const wrap = document.createElement("div");
     wrap.className = "recent-item-wrap";
 
     const item = document.createElement("a");
-    item.className = `recent-item${isNew ? " recent-item-new" : ""}`;
+    item.className = `recent-item${isNew ? " recent-item-new" : ""}${isProcessing ? " recent-item-processing" : ""}`;
     item.href = "#";
     item.addEventListener("click", (e) => {
       // Ignore clicks that land on inline action buttons (LLM, ⋯ menu).
-      if (e.target.closest(".recent-summarize") || e.target.closest(".row-actions")) {
+      if (
+        e.target.closest(".recent-summarize") ||
+        e.target.closest(".row-actions") ||
+        e.target.closest(".recent-clear-processing")
+      ) {
         return;
       }
       e.preventDefault();
+      if (isProcessing) return;
       toggleInlineTranscript(wrap, t.id);
     });
     item.innerHTML = `
@@ -2074,17 +2238,21 @@ function renderRecentList(items) {
         ${isNew ? '<span class="recent-tick">&#10003;</span>' : ""}
         <div class="recent-text">
           <span class="recent-title">${escapeHtml(t.title)}</span>
-          <span class="recent-meta">${escapeHtml(t.author)} &middot; ${formatDate(t.createdAt)}</span>
+          <span class="recent-meta">${escapeHtml(formatRecentMeta(t))}</span>
         </div>
       </div>
       ${isNew ? `<svg class="recent-arrow" width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M7 4l6 6-6 6"/>
       </svg>` : ""}
     `;
-    // Summarize-with-LLM button — hover-reveal per row, mirrors web-app LlmLauncher
-    item.appendChild(buildLlmLauncher(t.id, t.title));
-    // ⋯ menu — send to destinations, download, copy, open in web app (YTT-205 §3)
-    item.appendChild(buildRowActionsMenu(t.id, t.title));
+    if (isProcessing) {
+      item.appendChild(buildProcessingClearButton(t.id, t.title));
+    } else {
+      // Summarize-with-LLM button — hover-reveal per row, mirrors web-app LlmLauncher
+      item.appendChild(buildLlmLauncher(t.id, t.title));
+      // ⋯ menu — send to destinations, download, copy, open in web app (YTT-205 §3)
+      item.appendChild(buildRowActionsMenu(t.id, t.title));
+    }
 
     const panel = document.createElement("div");
     panel.className = "recent-transcript";
@@ -2195,7 +2363,7 @@ async function showCurrentPageState() {
 
 let initVersion = 0;
 function initWasSuperseded(version) {
-  return version !== initVersion || isTranscribing;
+  return version !== initVersion || isTranscribing || userActionInProgress;
 }
 
 // True after the first init() has completed its CHECK_SERVICE round-trip.
@@ -2259,13 +2427,12 @@ async function init() {
   const cachedAuthOk = mode === "cloud" && isAuthCacheFresh(authCache);
   const tab = tabResult?.[0];
   if (tab) {
-    const videoId = extractVideoId(tab.url || "");
-    let isLive = false;
+    let storedPageInfo = {};
     try {
       const stored = await chrome.storage.session.get(`tab_${tab.id}`);
-      isLive = !!stored[`tab_${tab.id}`]?.isLive;
+      storedPageInfo = stored[`tab_${tab.id}`] || {};
     } catch { /* ignore */ }
-    pageInfo = { url: tab.url, title: tab.title, videoId, isLive };
+    pageInfo = pageInfoFromTab(tab, storedPageInfo);
     currentTabUrl = tab.url;
     currentTabId = tab.id;
   }
@@ -2537,12 +2704,14 @@ async function doTranscribe() {
     console.warn("[ytt-popup] doTranscribe ignored: already transcribing");
     return;
   }
+  userActionInProgress = true;
   if (!pageInfo?.url) {
     console.warn("[ytt-popup] doTranscribe blocked: missing pageInfo.url", {
       pageInfo,
       currentTabUrl,
       currentTabId,
     });
+    userActionInProgress = false;
     el.errorMessage.textContent = "No video detected. Refresh YouTube and try again.";
     showState("Error");
     return;
@@ -2555,6 +2724,7 @@ async function doTranscribe() {
   });
 
   isTranscribing = true;
+  userActionInProgress = false;
   initVersion++;
   pageStateVersion++;
   el.transcribingTitle.textContent = pageInfo.title || "Transcribing...";
@@ -2579,6 +2749,8 @@ async function doTranscribe() {
     type: "TRANSCRIBE",
     url: pageInfo.url,
     title: pageInfo.title,
+    author: pageInfo.author,
+    channelUrl: pageInfo.channelUrl,
   });
   console.log("[ytt-popup] TRANSCRIBE response", res);
 
@@ -2595,6 +2767,7 @@ async function doTranscribe() {
   }
 
   isTranscribing = false;
+  userActionInProgress = false;
   suppressPollFinalization = false;
   stopPolling();
   stopProgress();
@@ -2602,8 +2775,7 @@ async function doTranscribe() {
   if (res?.success && res.data?.id) {
     await sendMsg({ type: "CLEAR_TRANSCRIPTION" });
     // YTT-259: chain summarize when the user has set the button mode to
-    // "transcribe-and-summarize" or "summarize". Same downstream flow in
-    // both cases — the only difference is the button label they clicked.
+    // "transcribe-and-summarize".
     if (transcribeMode !== "transcribe") {
       const provider = LLM_PROVIDERS.find((p) => p.id === summarizeProvider);
       if (provider) {
@@ -2761,6 +2933,8 @@ el.btnQueue.addEventListener("click", async () => {
     type: "QUEUE_ADD",
     url: pageInfo.url,
     title: pageInfo.title,
+    author: pageInfo.author,
+    channelUrl: pageInfo.channelUrl,
   });
   el.queuePrompt.hidden = true;
   renderQueueList();
@@ -2782,13 +2956,12 @@ chrome.tabs.onActivated?.addListener(async () => {
       // During active transcription, only update page info for queue prompt —
       // don't re-init which would clobber the progress animation
       if (isTranscribing) {
-        const videoId = extractVideoId(tab.url || "");
-        let isLive = false;
+        let storedPageInfo = {};
         try {
           const stored = await chrome.storage.session.get(`tab_${tab.id}`);
-          isLive = !!stored[`tab_${tab.id}`]?.isLive;
+          storedPageInfo = stored[`tab_${tab.id}`] || {};
         } catch { /* ignore */ }
-        pageInfo = { url: tab.url, title: tab.title, videoId, isLive };
+        pageInfo = pageInfoFromTab(tab, storedPageInfo);
         showQueuePrompt();
       } else {
         init();
@@ -2816,13 +2989,12 @@ chrome.tabs.onUpdated?.addListener(async (tabId, changeInfo) => {
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tab?.url) {
-        const videoId = extractVideoId(tab.url);
-        let isLive = false;
+        let storedPageInfo = {};
         try {
           const stored = await chrome.storage.session.get(`tab_${tab.id}`);
-          isLive = !!stored[`tab_${tab.id}`]?.isLive;
+          storedPageInfo = stored[`tab_${tab.id}`] || {};
         } catch { /* ignore */ }
-        pageInfo = { url: tab.url, title: tab.title, videoId, isLive };
+        pageInfo = pageInfoFromTab(tab, storedPageInfo);
         showQueuePrompt();
       }
     } catch { /* ignore */ }
@@ -2845,17 +3017,14 @@ chrome.storage.onChanged.addListener((changes, area) => {
   const next = changes[key].newValue;
   if (!next?.url) return;
   if (isTranscribing) {
-    pageInfo = {
-      url: next.url,
-      title: next.title || "",
-      videoId: next.videoId || extractVideoId(next.url),
-      isLive: !!next.isLive,
-    };
+    pageInfo = pageInfoFromTab(next, next);
     currentTabUrl = next.url;
     showQueuePrompt();
   } else if (next.url !== currentTabUrl) {
     currentTabUrl = next.url;
     init();
+  } else {
+    pageInfo = pageInfoFromTab(next, next);
   }
 });
 
@@ -2904,11 +3073,16 @@ el.btnNavLibrary.addEventListener("click", () => {
 });
 
 async function loadSettings() {
-  const res = await sendMsg({ type: "GET_SETTINGS" });
-  if (!res?.success) return;
-  const { mode } = res.data;
-  setModeUI(mode);
-  await loadTranscribeAction();
+  el.settingsPanel.dataset.skipSkeleton = "true";
+  try {
+    const res = await sendMsg({ type: "GET_SETTINGS" });
+    if (!res?.success) return;
+    const { mode } = res.data;
+    await setModeUI(mode);
+    await loadTranscribeAction();
+  } finally {
+    delete el.settingsPanel.dataset.skipSkeleton;
+  }
 }
 
 // YTT-259: Load the user's primary-button mode + preferred summarize
@@ -2921,7 +3095,8 @@ async function loadSettings() {
 // it to become the auto-summarize default).
 async function loadTranscribeAction() {
   const sync = await chrome.storage.sync.get(["transcribeMode", "summarizeProvider"]);
-  transcribeMode = sync.transcribeMode || "transcribe-and-summarize";
+  transcribeMode =
+    sync.transcribeMode === "transcribe" ? "transcribe" : "transcribe-and-summarize";
   summarizeProvider = sync.summarizeProvider || "claude";
   applyTranscribeActionUI();
 }
@@ -2930,7 +3105,6 @@ function applyTranscribeActionUI() {
   // Radio state
   el.modeTranscribe.checked = transcribeMode === "transcribe";
   el.modeTranscribeSummarize.checked = transcribeMode === "transcribe-and-summarize";
-  el.modeSummarize.checked = transcribeMode === "summarize";
   // Provider picker only visible when summarize is in play
   el.summarizeProviderRow.hidden = transcribeMode === "transcribe";
   applyProviderPickerTrigger();
@@ -2990,12 +3164,17 @@ buildProviderPickerMenu();
 
 function updateTranscribeButtonLabel() {
   if (!el.btnTranscribeLabel) return;
-  if (transcribeMode === "summarize") {
-    el.btnTranscribeLabel.textContent = "Summarize";
-  } else if (transcribeMode === "transcribe-and-summarize") {
+  const provider = LLM_PROVIDERS.find((p) => p.id === summarizeProvider);
+  const usesSummarize = transcribeMode !== "transcribe" && !!provider;
+  if (transcribeMode === "transcribe-and-summarize") {
     el.btnTranscribeLabel.textContent = "Transcribe & Summarize";
   } else {
     el.btnTranscribeLabel.textContent = "Transcribe";
+  }
+  if (el.btnTranscribe) {
+    el.btnTranscribe.title = usesSummarize
+      ? `Summarizes with ${provider.name}`
+      : "";
   }
 }
 
@@ -3024,11 +3203,8 @@ el.modeTranscribe.addEventListener("change", () => {
 el.modeTranscribeSummarize.addEventListener("change", () => {
   if (el.modeTranscribeSummarize.checked) saveTranscribeMode("transcribe-and-summarize");
 });
-el.modeSummarize.addEventListener("change", () => {
-  if (el.modeSummarize.checked) saveTranscribeMode("summarize");
-});
 
-function setModeUI(mode) {
+async function setModeUI(mode) {
   currentSettingsMode = mode;
   el.btnModeLocal.classList.toggle("active", mode === "local");
   el.btnModeCloud.classList.toggle("active", mode === "cloud");
@@ -3037,10 +3213,10 @@ function setModeUI(mode) {
   // Server stop control: only useful in self-hosted mode AND when the native
   // host is installed (otherwise we have no way to stop). detectNativeHost
   // sets nativeHostAvailable; if it hasn't run yet, fire-and-forget.
-  refreshServerSection(mode);
+  await refreshServerSection(mode);
   // Destinations always render. Obsidian is client-side (works in any mode);
   // cloud-only adapters show as teasers with a Sign in CTA in local mode.
-  renderDestinationsSettings();
+  await renderDestinationsSettings();
 }
 
 async function refreshServerSection(mode) {
@@ -3221,7 +3397,7 @@ async function switchMode(newMode) {
   // self-hosted → cloud only showed Obsidian (cloud branch never ran);
   // cloud → self-hosted showed Notion as a "Cloud unreachable" teaser
   // (the cloud branch ran with a defunct cloud server, fell back to teasers).
-  setModeUI(newMode);
+  await setModeUI(newMode);
   // Mode toggles live inside the settings panel — keep the user there.
   // init() (which collapses settings into the library view) runs when the
   // user navigates back via the Library nav button.

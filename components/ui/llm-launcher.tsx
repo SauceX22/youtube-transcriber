@@ -72,6 +72,7 @@ export function LlmLauncher({ videoId, videoTitle, onToast }: LlmLauncherProps) 
     typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null
   );
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -83,6 +84,22 @@ export function LlmLauncher({ videoId, videoTitle, onToast }: LlmLauncherProps) 
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    };
+  }, []);
+
+  const openMenu = useCallback(() => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    setOpen(true);
+  }, []);
+
+  const scheduleCloseMenu = useCallback(() => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = setTimeout(() => setOpen(false), 140);
+  }, []);
 
   const launchWithProvider = useCallback(
     async (provider: LlmProvider) => {
@@ -147,14 +164,21 @@ export function LlmLauncher({ videoId, videoTitle, onToast }: LlmLauncherProps) 
     : PROVIDERS;
 
   return (
-    <div ref={dropdownRef} className="relative">
+    <div
+      ref={dropdownRef}
+      className="relative"
+      onMouseEnter={openMenu}
+      onMouseLeave={scheduleCloseMenu}
+    >
       <button
         type="button"
+        onFocus={openMenu}
         onClick={(e) => {
           e.stopPropagation();
-          setOpen((prev) => !prev);
+          openMenu();
         }}
-        title="Summarize with LLM..."
+        title="Summarize with Claude or ChatGPT"
+        aria-label="Summarize with Claude or ChatGPT"
         className="group/llm inline-flex h-8 w-8 items-center justify-center rounded-lg text-white/60 transition hover:bg-white/5 hover:text-white/90 active:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
       >
         {/* Sparkle / wand icon */}

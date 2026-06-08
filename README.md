@@ -48,12 +48,13 @@ The extension works in two modes:
 ### Install from source (for self-hosted or development)
 
 1. Make sure the local service is running (`npm run dev`)
-2. Open Chrome and go to `chrome://extensions`
-3. Enable **Developer mode** (toggle, top right)
-4. Click **Load unpacked**
-5. Select the `extension/` folder inside this repo
-6. Open extension settings and switch mode to **Self-hosted**
-7. Click the YouTube Transcriber icon in your toolbar to open the side panel
+2. Build the unpacked extension (`npm run build:ext:dev`)
+3. Open Chrome and go to `chrome://extensions`
+4. Enable **Developer mode** (toggle, top right)
+5. Click **Load unpacked**
+6. Select the `extension/dist/` folder inside this repo
+7. Open extension settings and switch mode to **Self-hosted**
+8. Click the YouTube Transcriber icon in your toolbar to open the side panel
 
 ### Usage
 

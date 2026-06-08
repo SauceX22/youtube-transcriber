@@ -12,6 +12,12 @@ import { isTranscriptionInProgress } from "@/lib/whisper";
 
 type ClientSegment = { start: number; duration?: number; text: string };
 
+function preferRealMetadata(metaValue: string | null | undefined, suppliedValue: string): string {
+  const normalized = metaValue?.trim();
+  if (!normalized || normalized.toLowerCase() === "unknown") return suppliedValue;
+  return normalized;
+}
+
 function isValidClientSegments(value: unknown): value is ClientSegment[] {
   if (!Array.isArray(value) || value.length === 0) return false;
   return value.every(
@@ -29,6 +35,8 @@ export async function POST(request: NextRequest) {
     lang?: string;
     segments?: unknown;
     title?: string;
+    author?: string;
+    channelUrl?: string;
   };
   try {
     body = await request.json();
@@ -74,21 +82,26 @@ export async function POST(request: NextRequest) {
   // persist the supplied transcript. This is what makes cloud match local
   // speed: no Railway worker hop, no audio download, no transcription job.
   if (platform === "youtube" && isValidClientSegments(body.segments)) {
+    const normalized = body.segments.map((s) => ({
+      text: s.text,
+      startMs: Math.round(s.start * 1000),
+      durationMs: Math.round((s.duration ?? 0) * 1000),
+    }));
+    const suppliedAuthor =
+      typeof body.author === "string" && body.author.trim()
+        ? body.author.trim().slice(0, 256)
+        : "";
+    const suppliedChannelUrl =
+      typeof body.channelUrl === "string" && body.channelUrl.trim()
+        ? body.channelUrl.trim().slice(0, 1024)
+        : "";
     try {
       const meta = await fetchMetadata(videoId);
-      // Normalize extension's seconds-based shape to the canonical
-      // {text, startMs, durationMs} stored everywhere else (lib/types.ts,
-      // download/summarize routes, app/page.tsx all read startMs/durationMs).
-      const normalized = body.segments.map((s) => ({
-        text: s.text,
-        startMs: Math.round(s.start * 1000),
-        durationMs: Math.round((s.duration ?? 0) * 1000),
-      }));
       const data = {
         videoId,
         title: body.title || meta.title,
-        author: meta.author,
-        channelUrl: meta.channelUrl,
+        author: preferRealMetadata(meta.author, suppliedAuthor),
+        channelUrl: preferRealMetadata(meta.channelUrl, suppliedChannelUrl),
         thumbnailUrl: meta.thumbnailUrl,
         videoUrl: url,
         transcript: JSON.stringify(normalized),
@@ -100,10 +113,29 @@ export async function POST(request: NextRequest) {
         : await prisma.video.create({ data });
       return NextResponse.json(video, { status: existing ? 200 : 201 });
     } catch (err: unknown) {
-      // Fall through to the server fetch path on metadata failure rather
-      // than failing the whole request — the supplied segments are still
-      // valid, but we need title/thumbnail before persisting.
-      console.warn("[transcripts] client-segment fast path metadata failed", err);
+      if (err instanceof Error && err.message.includes("not found")) {
+        console.warn("[transcripts] client-segment fast path metadata not found", err);
+      } else {
+        console.warn("[transcripts] client-segment fast path metadata failed", err);
+        const data = {
+          videoId,
+          title:
+            typeof body.title === "string" && body.title.trim()
+              ? body.title.trim().slice(0, 512)
+              : "Untitled",
+          author: suppliedAuthor,
+          channelUrl: suppliedChannelUrl,
+          thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+          videoUrl: url,
+          transcript: JSON.stringify(normalized),
+          source: "client_panel_scrape",
+          platform,
+        };
+        const video = existing
+          ? await prisma.video.update({ where: { videoId }, data })
+          : await prisma.video.create({ data });
+        return NextResponse.json(video, { status: existing ? 200 : 201 });
+      }
     }
   }
 

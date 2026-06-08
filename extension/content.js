@@ -26,6 +26,30 @@ function getVideoTitle() {
   return document.title.replace(" - YouTube", "").trim();
 }
 
+function getChannelInfo() {
+  const selectors = [
+    "#owner ytd-channel-name #text a",
+    "ytd-watch-metadata ytd-channel-name #text a",
+    "#upload-info ytd-channel-name #text a",
+  ];
+  for (const selector of selectors) {
+    const el = document.querySelector(selector);
+    const name = el?.textContent?.trim();
+    if (name) {
+      const href = el.getAttribute("href");
+      return {
+        author: name,
+        channelUrl: href ? new URL(href, window.location.origin).toString() : "",
+      };
+    }
+  }
+  const authorMeta = document.querySelector('link[itemprop="name"]');
+  return {
+    author: authorMeta?.getAttribute("content")?.trim() || "",
+    channelUrl: "",
+  };
+}
+
 function isLiveStream() {
   // YouTube player has a .ytp-live class when playing a live stream
   const player = document.getElementById("movie_player");
@@ -42,11 +66,14 @@ function isLiveStream() {
 
 function reportPageInfo() {
   const videoId = extractVideoId(window.location.href);
+  const channel = getChannelInfo();
   try {
     chrome.runtime.sendMessage({
       type: "PAGE_INFO",
       url: window.location.href,
       title: getVideoTitle(),
+      author: channel.author,
+      channelUrl: channel.channelUrl,
       videoId: videoId,
       isLive: videoId ? isLiveStream() : false,
     });

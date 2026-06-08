@@ -19,7 +19,8 @@ const { execFileSync } = require("child_process");
 const IS_DEV = process.argv.includes("--dev");
 const SRC = __dirname;
 const DIST = path.join(SRC, "dist");
-const DEV_KEY_PATH = path.join(SRC, "dev-key.pem");
+const DEV_KEY_PATH = path.join(SRC, "..", ".dev", "extension-dev-key.pem");
+const LEGACY_DEV_KEY_PATH = path.join(SRC, "dev-key.pem");
 
 // Files to copy as-is (relative to extension/)
 const COPY_FILES = [
@@ -81,10 +82,19 @@ if (IS_DEV) {
   // Inject "key" field from local keypair so unpacked dev ext gets a stable ID.
   // Without this, Chrome derives the ID from the install path — meaning every
   // path change (e.g. loading dist/ vs extension/) produces a new ID and breaks
-  // the native messaging whitelist. dev-key.pem is gitignored and machine-local:
+  // the native messaging whitelist. .dev/extension-dev-key.pem is gitignored and
+  // machine-local:
   // each contributor gets their own keypair (and thus their own stable dev ID).
+  if (!fs.existsSync(DEV_KEY_PATH) && fs.existsSync(LEGACY_DEV_KEY_PATH)) {
+    ensureDir(path.dirname(DEV_KEY_PATH));
+    fs.renameSync(LEGACY_DEV_KEY_PATH, DEV_KEY_PATH);
+    console.log(
+      `Moved legacy dev keypair to ${path.relative(process.cwd(), DEV_KEY_PATH)}`
+    );
+  }
   if (!fs.existsSync(DEV_KEY_PATH)) {
     console.log(`No dev keypair found — generating ${path.relative(process.cwd(), DEV_KEY_PATH)}`);
+    ensureDir(path.dirname(DEV_KEY_PATH));
     const pem = execFileSync("openssl", ["genrsa", "2048"], { stdio: ["ignore", "pipe", "ignore"] });
     const pkcs8 = execFileSync(
       "openssl",

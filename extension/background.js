@@ -431,13 +431,28 @@ async function transcribeRequest(url, extras = {}, configOverride = null) {
     // The fast-path endpoint can't fetch metadata (Vercel is blocked from
     // YouTube), so the extension supplies title scraped from the page.
     if (extras.title) body.title = extras.title;
+    if (extras.author) body.author = extras.author;
+    if (extras.channelUrl) body.channelUrl = extras.channelUrl;
   }
-  const res = await fetch(`${config.baseUrl}/api/transcripts`, {
+  let res = await fetch(`${config.baseUrl}/api/transcripts`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...config.headers },
     credentials: config.credentials,
     body: JSON.stringify(body),
   });
+  // Immediately after OAuth, Chrome can have the transcribed.dev cookie
+  // available for the second authenticated request but not the first POST
+  // from the extension service worker. Retry once so the user's first click
+  // after switching/signing in does the work instead of being a warmup.
+  if (config.mode === "cloud" && res.status === 401) {
+    await new Promise((r) => setTimeout(r, 600));
+    res = await fetch(`${config.baseUrl}/api/transcripts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...config.headers },
+      credentials: config.credentials,
+      body: JSON.stringify(body),
+    });
+  }
   const data = await res.json();
   if (!res.ok) {
     throw new Error(await classifyError(res.status, data));
@@ -682,6 +697,24 @@ async function getTranscript(id) {
   return await res.json();
 }
 
+async function deleteTranscript(id) {
+  const config = await getApiConfig();
+  const res = await fetch(`${config.baseUrl}/api/transcripts/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: config.headers,
+    credentials: config.credentials,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(await classifyError(res.status, data));
+  const current = await getState();
+  if (current?.status === "transcribing" && current.jobId === id) {
+    await clearState();
+    setBadge("");
+    await processNextInQueue();
+  }
+  return data;
+}
+
 async function getPreferences() {
   const config = await getApiConfig();
   if (config.mode !== "cloud") return { summarizePrompt: null };
@@ -747,6 +780,23 @@ async function closeOauthWindow() {
   oauthWindowId = null;
 }
 
+async function openNextToActiveTab(url) {
+  try {
+    const [current] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
+    const opts = { url, active: true };
+    if (current) {
+      opts.index = current.index + 1;
+      opts.openerTabId = current.id;
+    }
+    return await chrome.tabs.create(opts);
+  } catch {
+    return await chrome.tabs.create({ url, active: true });
+  }
+}
+
 async function destinationsFetch(path, init = {}) {
   const config = await getApiConfig();
   if (config.mode !== "cloud") return DESTINATIONS_UNAVAILABLE;
@@ -790,9 +840,12 @@ async function listDestinations() {
 }
 
 async function startDestinationOauth(adapterId) {
-  // Cloud redirects here after the provider callback. Must match the
-  // server-side allowlist (chrome-extension://* is whitelisted).
-  const returnUrl = chrome.runtime.getURL("destination-connected.html");
+  // Cloud redirects here after provider OAuth. Since OAuth now opens in a
+  // normal browser tab, return to the web settings page instead of a
+  // chrome-extension:// page; privacy blockers can reject top-level extension
+  // callback URLs with ERR_BLOCKED_BY_CLIENT. The popup polls for connection
+  // completion, so it does not need a runtime-message landing page here.
+  const returnUrl = `${CLOUD_BASE}/settings/destinations`;
   return await destinationsFetch(
     `/${encodeURIComponent(adapterId)}/oauth/start`,
     { method: "POST", body: JSON.stringify({ returnUrl }) }
@@ -1088,15 +1141,18 @@ async function claimHandoffPrompt(token) {
 // Core transcribe — runs in background, persists state
 // ---------------------------------------------------------------------------
 
-async function doTranscribe(url, title) {
+async function doTranscribe(url, title, author = "", channelUrl = "") {
   console.log("[ytt-bg] doTranscribe start", {
     url,
     videoId: youtubeVideoId(url),
     title: title || "",
+    author: author || "",
   });
   const state = {
     url,
     title: title || "",
+    author: author || "",
+    channelUrl: channelUrl || "",
     status: "transcribing",
     result: null,
     error: null,
@@ -1113,7 +1169,9 @@ async function doTranscribe(url, title) {
     const t0 = performance.now();
     const captions = await tryExtractCaptions(url);
     const tCaptions = performance.now() - t0;
-    const extras = captions ? { ...captions, title: title || "" } : {};
+    const extras = captions
+      ? { ...captions, title: title || "", author: author || "", channelUrl: channelUrl || "" }
+      : {};
     const config = await getApiConfig();
     const tReq = performance.now();
     const data = await transcribeRequest(url, extras, config);
@@ -1190,10 +1248,19 @@ async function processNextInQueue() {
   const next = queue.shift();
   await setQueue(queue);
 
-  // Fire and forget — runs in background
-  doTranscribe(next.url, next.title).catch(() => {});
+  doTranscribe(next.url, next.title, next.author, next.channelUrl).catch(() => {});
+  await waitForQueuedTranscriptionStart(next.url);
 
   return { processing: true, title: next.title, url: next.url };
+}
+
+async function waitForQueuedTranscriptionStart(url) {
+  for (let i = 0; i < 20; i++) {
+    const current = await getState();
+    if (current?.status === "transcribing" && current.url === url) return true;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -1284,7 +1351,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!validHttpUrl(message.url)) {
           throw new Error("Invalid url");
         }
-        return await doTranscribe(message.url, clampTitle(message.title));
+        return await doTranscribe(
+          message.url,
+          clampTitle(message.title),
+          clampTitle(message.author),
+          typeof message.channelUrl === "string" && validHttpUrl(message.channelUrl)
+            ? message.channelUrl
+            : ""
+        );
       }
 
       case "GET_TRANSCRIPTION_STATUS":
@@ -1303,6 +1377,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return await getTranscript(message.id);
       }
 
+      case "DELETE_TRANSCRIPT": {
+        if (!validId(message.id)) throw new Error("Invalid id");
+        return await deleteTranscript(message.id);
+      }
+
       case "GET_PREFERENCES":
         return await getPreferences();
 
@@ -1318,7 +1397,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const queue = await getQueue();
         const already = queue.some((q) => q.url === message.url);
         if (!already) {
-          queue.push({ url: message.url, title: clampTitle(message.title) });
+          queue.push({
+            url: message.url,
+            title: clampTitle(message.title),
+            author: clampTitle(message.author),
+            channelUrl:
+              typeof message.channelUrl === "string" && validHttpUrl(message.channelUrl)
+                ? message.channelUrl
+                : "",
+          });
           await setQueue(queue);
         }
         return { ok: true, queue };
@@ -1370,6 +1457,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           [`tab_${sender.tab.id}`]: {
             url: message.url,
             title: clampTitle(message.title),
+            author: clampTitle(message.author),
+            channelUrl:
+              typeof message.channelUrl === "string" && validHttpUrl(message.channelUrl)
+                ? message.channelUrl
+                : "",
             videoId: vid,
             isLive: !!message.isLive,
           },
@@ -1405,17 +1497,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!validAdapterId(message.adapterId)) throw new Error("Invalid adapterId");
         const res = await startDestinationOauth(message.adapterId);
         if (res.ok && res.data?.authUrl && typeof res.data.authUrl === "string") {
-          // Close any lingering popup from a prior attempt so the user doesn't
-          // end up with a stale provider error tab after a successful retry.
+          // Close any lingering popup from old builds or prior attempts. Cloud
+          // connector OAuth intentionally opens in a normal browser tab now:
+          // provider auth is a setup flow, not an in-panel extension flow.
           await closeOauthWindow();
           try {
-            const win = await chrome.windows.create({
-              url: res.data.authUrl,
-              type: "popup",
-              width: 500,
-              height: 700,
-            });
-            oauthWindowId = win?.id ?? null;
+            await openNextToActiveTab(res.data.authUrl);
+            oauthWindowId = null;
           } catch (err) {
             return { ok: false, error: `Couldn't open auth window: ${err.message}` };
           }

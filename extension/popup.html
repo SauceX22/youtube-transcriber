@@ -125,7 +125,9 @@
     <!-- Ready (not yet transcribed, or already transcribed) -->
     <div id="stateReady" class="state" hidden>
       <h1 class="panel-title" id="videoTitle"></h1>
-      <button class="btn-transcribe" id="btnTranscribe"><span class="btn-transcribe-label" id="btnTranscribeLabel">Transcribe &amp; Summarize</span></button>
+      <button class="btn-transcribe" id="btnTranscribe">
+        <span class="btn-transcribe-label" id="btnTranscribeLabel">Transcribe &amp; Summarize</span>
+      </button>
       <div class="live-notice" id="liveNotice" hidden>
         <span class="live-badge">LIVE</span>
         <span class="live-text">Live streams can't be transcribed yet</span>
@@ -186,6 +188,10 @@
       <div class="section-label">Settings</div>
       <div id="cloudAccountSection" class="settings-account" hidden>
         <a class="settings-account-link" href="https://www.transcribed.dev/account" target="_blank">
+          <svg class="settings-account-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2"/>
+            <path d="M4 20c1.6-4 4.2-6 8-6s6.4 2 8 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
           Manage account
         </a>
       </div>
@@ -220,14 +226,6 @@
             <span class="settings-radio-desc">Transcribe then open in your AI</span>
           </span>
         </label>
-        <label class="settings-radio">
-          <input type="radio" name="transcribeMode" value="summarize" id="modeSummarize" />
-          <span class="settings-radio-dot"></span>
-          <span class="settings-radio-text">
-            <span class="settings-radio-title">Summarize</span>
-            <span class="settings-radio-desc">Summary only — transcript happens in the background</span>
-          </span>
-        </label>
         <div id="summarizeProviderRow" class="settings-action-provider" hidden>
           <span class="settings-action-provider-label">Open in</span>
           <div class="provider-picker">
@@ -242,6 +240,9 @@
       </div>
       <div id="destinationsSection" class="settings-destinations" hidden>
         <div class="section-label section-label-subsection">Connectors</div>
+        <a class="settings-help-link destinations-help-link" href="https://www.transcribed.dev/docs/destinations" target="_blank" rel="noopener noreferrer">
+          Notion &amp; Obsidian setup guide
+        </a>
         <div id="destinationsList" class="destinations-list"></div>
         <p id="destinationsEmpty" class="destinations-empty" hidden>Connectors aren't available yet.</p>
         <div id="obsidianVaultRow" class="obsidian-vault-row" hidden>

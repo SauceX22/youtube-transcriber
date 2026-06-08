@@ -72,6 +72,10 @@ function formatDate(iso: string): string {
   });
 }
 
+function formatLibraryMeta(video: Pick<VideoSummary, "author" | "createdAt">): string {
+  return [video.author?.trim(), formatDate(video.createdAt)].filter(Boolean).join(" · ");
+}
+
 function formatTimestamp(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
@@ -1313,8 +1317,7 @@ function HomeInner() {
                                   {t.title}
                                 </p>
                                 <p className="mt-1 truncate text-sm text-white/40">
-                                  {t.author} · {formatDate(t.createdAt)}
-                                  {t.source ? ` · ${t.source}` : ""}
+                                  {formatLibraryMeta(t)}
                                 </p>
                               </button>
 
@@ -1373,7 +1376,7 @@ function HomeInner() {
                                     </svg>
                                   ) : (
                                     <svg
-                                      className="transition-transform duration-300"
+                                      className="transition-transform duration-300 group-hover/cp:scale-110"
                                       width="16"
                                       height="16"
                                       viewBox="0 0 20 20"

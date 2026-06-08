@@ -86,4 +86,5 @@ docs/TEST_USER_CHECKLIST.md
 tmp/email-renders/
 
 # Chrome unpacked dev keypair — never commit
+.dev/
 extension/dev-key.pem
