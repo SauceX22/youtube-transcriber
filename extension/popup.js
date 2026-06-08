@@ -190,6 +190,8 @@ let nativeSummariesAvailable = false;
 const nativeSummaryCache = new Map();
 const NATIVE_SUMMARY_CACHE_PREFIX = "nativeSummary:";
 const NATIVE_SUMMARY_CACHE_VERSION = "v1";
+const SUMMARY_EXPERIENCE_DEFAULT_KEY = "summaryExperienceDefaultedAt";
+const SUMMARY_EXPERIENCE_DEFAULT_VERSION = "2026-06-native-summary-default";
 let expandedTranscriptId = null;
 let lastRecentRenderHash = "";
 
@@ -1833,6 +1835,25 @@ function nativeSummaryCacheKey(transcriptId) {
   return `${NATIVE_SUMMARY_CACHE_PREFIX}${NATIVE_SUMMARY_CACHE_VERSION}:${transcriptId}`;
 }
 
+function readSummaryExperienceDefault(sync = {}) {
+  if (sync[SUMMARY_EXPERIENCE_DEFAULT_KEY]) {
+    return sync.summaryExperienceV2 !== false;
+  }
+  return true;
+}
+
+async function persistSummaryExperienceDefault(sync = {}) {
+  if (sync[SUMMARY_EXPERIENCE_DEFAULT_KEY]) return;
+  try {
+    await chrome.storage.sync.set({
+      summaryExperienceV2: true,
+      [SUMMARY_EXPERIENCE_DEFAULT_KEY]: SUMMARY_EXPERIENCE_DEFAULT_VERSION,
+    });
+  } catch {
+    // Non-fatal: the in-memory default still applies for this popup session.
+  }
+}
+
 async function hydrateNativeSummary(transcriptId) {
   if (!summaryExperienceV2 || currentMode !== "cloud") return null;
   if (nativeSummaryCache.has(transcriptId)) return nativeSummaryCache.get(transcriptId);
@@ -1870,7 +1891,7 @@ async function persistNativeSummary(transcriptId, summary) {
 }
 
 function renderNativeSummaryForTranscript(transcriptId) {
-  if (!nativeSummaryFlow.isEnabled()) return "";
+  if (!summaryExperienceV2 || currentMode !== "cloud") return "";
   const entry = nativeSummaryCache.get(transcriptId);
   if (!entry?.summary_md) return "";
   const meta = entry.cached ? "Cached summary" : "Summary";
@@ -2423,6 +2444,7 @@ async function init() {
         "transcribeMode",
         "summarizeProvider",
         "summaryExperienceV2",
+        SUMMARY_EXPERIENCE_DEFAULT_KEY,
       ]),
       getCachedAuth(),
     ]);
@@ -2436,7 +2458,8 @@ async function init() {
   transcribeMode =
     syncStash?.transcribeMode === "transcribe" ? "transcribe" : "transcribe-and-summarize";
   summarizeProvider = syncStash?.summarizeProvider || "claude";
-  summaryExperienceV2 = syncStash?.summaryExperienceV2 !== false;
+  summaryExperienceV2 = readSummaryExperienceDefault(syncStash);
+  await persistSummaryExperienceDefault(syncStash);
   applyTranscribeActionUI();
   // Only treat the cache as a hard "they are signed in" signal — used to
   // broaden the cold-start retry below. We always paint optimistically
@@ -3169,11 +3192,13 @@ async function loadTranscribeAction() {
     "transcribeMode",
     "summarizeProvider",
     "summaryExperienceV2",
+    SUMMARY_EXPERIENCE_DEFAULT_KEY,
   ]);
   transcribeMode =
     sync.transcribeMode === "transcribe" ? "transcribe" : "transcribe-and-summarize";
   summarizeProvider = sync.summarizeProvider || "claude";
-  summaryExperienceV2 = sync.summaryExperienceV2 !== false;
+  summaryExperienceV2 = readSummaryExperienceDefault(sync);
+  await persistSummaryExperienceDefault(sync);
   applyTranscribeActionUI();
 }
 
@@ -3278,7 +3303,10 @@ el.modeTranscribeSummarize.addEventListener("change", () => {
 });
 el.summaryExperienceV2.addEventListener("change", async () => {
   summaryExperienceV2 = !!el.summaryExperienceV2.checked;
-  await chrome.storage.sync.set({ summaryExperienceV2 });
+  await chrome.storage.sync.set({
+    summaryExperienceV2,
+    [SUMMARY_EXPERIENCE_DEFAULT_KEY]: SUMMARY_EXPERIENCE_DEFAULT_VERSION,
+  });
   await nativeSummaryFlow.refreshAvailability();
   applyTranscribeActionUI();
   loadRecent();

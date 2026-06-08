@@ -71,6 +71,9 @@ body::-webkit-scrollbar-thumb:hover {
 .state.centered {
   text-align: center;
 }
+#stateReady {
+  flex: 0 0 auto;
+}
 .message {
   font-size: 14px;
   color: rgba(255, 255, 255, 0.7);
