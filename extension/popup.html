@@ -223,11 +223,18 @@
           <span class="settings-radio-dot"></span>
           <span class="settings-radio-text">
             <span class="settings-radio-title">Transcribe &amp; Summarize</span>
-            <span class="settings-radio-desc">Transcribe then open in your AI</span>
+            <span class="settings-radio-desc">Transcribe then create a summary</span>
           </span>
         </label>
+        <label id="summaryDestinationRow" class="settings-check-row settings-summary-destination" hidden>
+          <span class="settings-check-copy">
+            <span class="settings-label">Show summary in Transcriber</span>
+            <span class="settings-check-help">Default destination for built-in summaries. Claude and ChatGPT stay available as external handoffs.</span>
+          </span>
+          <input id="summaryExperienceV2" type="checkbox" />
+        </label>
         <div id="summarizeProviderRow" class="settings-action-provider" hidden>
-          <span class="settings-action-provider-label">Open in</span>
+          <span class="settings-action-provider-label">Open transcript in</span>
           <div class="provider-picker">
             <button type="button" class="provider-picker-trigger" id="providerPickerTrigger">
               <span class="provider-picker-icon" id="providerPickerIcon"></span>

@@ -277,8 +277,11 @@ async function checkService() {
         };
       }
       if (res.ok) {
+        const account = await res.json().catch(() => ({}));
         // Remember that this install has authed at least once.
         await chrome.storage.local.set({ hasEverSignedIn: true });
+        health.summaryCacheScope = await summaryCacheScope(config, account);
+        health.nativeSummariesAvailable = await checkNativeSummariesAvailable(config);
       }
     } catch {
       // Network error on session check — still treat as online since health passed
@@ -286,6 +289,45 @@ async function checkService() {
   }
 
   return health;
+}
+
+async function summaryCacheScope(config, account) {
+  if (config.mode !== "cloud") return null;
+  const accountId =
+    account?.id ||
+    account?.userId ||
+    account?.user?.id ||
+    account?.email ||
+    account?.user?.email ||
+    account?.profile?.id ||
+    account?.profile?.email;
+  if (!accountId) return null;
+  const input = `${config.baseUrl}:${accountId}`;
+  try {
+    const bytes = new TextEncoder().encode(input);
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(digest))
+      .slice(0, 16)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  } catch {
+    return null;
+  }
+}
+
+async function checkNativeSummariesAvailable(config) {
+  if (config.mode !== "cloud") return false;
+  try {
+    const res = await fetch(`${config.baseUrl}/api/summaries`, {
+      method: "GET",
+      headers: config.headers,
+      credentials: config.credentials,
+      signal: AbortSignal.timeout(3000),
+    });
+    return res.ok || res.status === 400 || res.status === 405;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -711,6 +753,32 @@ async function deleteTranscript(id) {
     await clearState();
     setBadge("");
     await processNextInQueue();
+  }
+  return data;
+}
+
+async function summarizeTranscript(id, promptOverride = null) {
+  const config = await getApiConfig();
+  if (config.mode !== "cloud") {
+    throw new Error("Native summaries are only available in cloud mode.");
+  }
+  if (!(await checkNativeSummariesAvailable(config))) {
+    throw new Error("Native summaries are not available on this cloud backend yet.");
+  }
+  const body = { transcriptId: id };
+  if (typeof promptOverride === "string" && promptOverride.trim()) {
+    body.promptOverride = promptOverride.trim();
+  }
+  const res = await fetch(`${config.baseUrl}/api/summaries`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...config.headers },
+    credentials: config.credentials,
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30000),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(await classifyError(res.status, data));
   }
   return data;
 }
@@ -1380,6 +1448,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case "DELETE_TRANSCRIPT": {
         if (!validId(message.id)) throw new Error("Invalid id");
         return await deleteTranscript(message.id);
+      }
+
+      case "SUMMARIZE_TRANSCRIPT": {
+        if (!validId(message.id)) throw new Error("Invalid id");
+        return await summarizeTranscript(message.id, message.promptOverride);
       }
 
       case "GET_PREFERENCES":

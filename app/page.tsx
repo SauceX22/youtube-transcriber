@@ -1325,6 +1325,7 @@ function HomeInner() {
                                 <LlmLauncher
                                   videoId={t.id}
                                   videoTitle={t.title}
+                                  variant="inline"
                                   onToast={(msg) => {
                                     setToast(msg);
                                     setTimeout(() => setToast(null), 2500);

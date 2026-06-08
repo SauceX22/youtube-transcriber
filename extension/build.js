@@ -21,6 +21,8 @@ const SRC = __dirname;
 const DIST = path.join(SRC, "dist");
 const DEV_KEY_PATH = path.join(SRC, "..", ".dev", "extension-dev-key.pem");
 const LEGACY_DEV_KEY_PATH = path.join(SRC, "dev-key.pem");
+const DEV_LABEL = (process.env.EXTENSION_DEV_LABEL || "").trim();
+const DEV_SHORT_NAME = (process.env.EXTENSION_DEV_SHORT_NAME || "").trim();
 
 // Files to copy as-is (relative to extension/)
 const COPY_FILES = [
@@ -76,8 +78,13 @@ for (const file of COPY_FILES) {
 if (IS_DEV) {
   const manifestPath = path.join(DIST, "manifest.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-  manifest.name = `${manifest.name} (dev)`;
-  manifest.short_name = "Transcriber dev";
+  const label = DEV_LABEL || "dev";
+  manifest.name = `${manifest.name} (${label})`;
+  manifest.short_name = DEV_SHORT_NAME || "Transcriber dev";
+  if (DEV_LABEL) {
+    const versionLabel = DEV_LABEL.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    if (versionLabel) manifest.version_name = `${manifest.version}-${versionLabel}`;
+  }
 
   // Inject "key" field from local keypair so unpacked dev ext gets a stable ID.
   // Without this, Chrome derives the ID from the install path — meaning every

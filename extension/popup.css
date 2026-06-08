@@ -63,10 +63,16 @@ body::-webkit-scrollbar-thumb:hover {
 
 /* State containers */
 .state {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   padding: 4px 0;
 }
 .state.centered {
   text-align: center;
+}
+#stateReady {
+  flex: 0 0 auto;
 }
 .message {
   font-size: 14px;
@@ -955,6 +961,52 @@ body::-webkit-scrollbar-thumb:hover {
   align-items: center;
   justify-content: center;
 }
+.native-summary-card {
+  margin: 0 0 16px 54px;
+  padding: 14px 16px;
+  border: 1px solid rgba(165, 137, 89, 0.28);
+  border-radius: 8px;
+  background: rgba(165, 137, 89, 0.08);
+}
+.native-summary-kicker {
+  margin-bottom: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.native-summary-body {
+  font-size: 14px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.86);
+}
+.native-summary-body h4 {
+  margin: 12px 0 6px;
+  font-size: 13px;
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.94);
+}
+.native-summary-body h4:first-child {
+  margin-top: 0;
+}
+.native-summary-body p {
+  margin: 0 0 8px;
+}
+.native-summary-body ul {
+  margin: 0 0 10px;
+  padding-left: 18px;
+}
+.native-summary-body li {
+  margin: 0 0 5px;
+}
+.native-summary-body code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.92em;
+}
 /* Matches the web-app spinner pattern (h-6 w-6 border-t + spin). */
 .transcript-spinner {
   width: 20px;
@@ -1626,6 +1678,57 @@ body::-webkit-scrollbar-thumb:hover {
 }
 .destinations-row-help:hover {
   color: rgba(255, 255, 255, 0.75);
+}
+
+/* Settings-level preloader — used while account, action, mode, and connector
+   state are being resolved. This prevents a partially-populated Settings view
+   from reading as the final UI before Notion / Obsidian rows arrive. */
+.settings-panel.is-loading {
+  min-height: 520px;
+  pointer-events: none;
+}
+.settings-panel.is-loading > * {
+  display: none;
+}
+.settings-panel.is-loading::before {
+  content: "";
+  display: block;
+  min-height: 410px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background:
+    linear-gradient(rgba(255,255,255,0.10), rgba(255,255,255,0.10)) 14px 18px / 76px 10px no-repeat,
+    linear-gradient(rgba(255,255,255,0.05), rgba(255,255,255,0.05)) 14px 44px / calc(100% - 28px) 1px no-repeat,
+    linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.18), rgba(255,255,255,0.08)) 14px 72px / 45% 12px no-repeat,
+    linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.18), rgba(255,255,255,0.08)) 14px 106px / 72% 14px no-repeat,
+    linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.18), rgba(255,255,255,0.08)) 14px 132px / 58% 9px no-repeat,
+    linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.18), rgba(255,255,255,0.08)) 14px 176px / 86px 10px no-repeat,
+    linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.18), rgba(255,255,255,0.08)) 14px 210px / 18px 18px no-repeat,
+    linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.18), rgba(255,255,255,0.08)) 44px 207px / 36% 11px no-repeat,
+    linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.18), rgba(255,255,255,0.08)) 44px 225px / 54% 8px no-repeat,
+    linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.18), rgba(255,255,255,0.08)) calc(100% - 58px) 207px / 44px 24px no-repeat,
+    linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.18), rgba(255,255,255,0.08)) 14px 258px / 18px 18px no-repeat,
+    linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.18), rgba(255,255,255,0.08)) 44px 255px / 32% 11px no-repeat,
+    linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.18), rgba(255,255,255,0.08)) 44px 273px / 48% 8px no-repeat,
+    linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.18), rgba(255,255,255,0.08)) calc(100% - 58px) 255px / 44px 24px no-repeat,
+    var(--panel);
+  background-size:
+    76px 10px,
+    calc(100% - 28px) 1px,
+    200% 12px,
+    200% 14px,
+    200% 9px,
+    200% 10px,
+    200% 18px,
+    200% 11px,
+    200% 8px,
+    200% 24px,
+    200% 18px,
+    200% 11px,
+    200% 8px,
+    200% 24px,
+    auto;
+  animation: recent-skeleton-shimmer 1.4s ease-in-out infinite;
 }
 
 /* Skeleton rows — same outer layout as .destinations-row, shimmer
@@ -2311,6 +2414,32 @@ body::-webkit-scrollbar-thumb:hover {
   font-size: 11px;
   color: var(--muted-3);
   line-height: 1.5;
+}
+.settings-check-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.settings-check-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.settings-check-help {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted-3);
+}
+.settings-check-row input {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
 }
 
 /* Self-hosted setup wall modal */
