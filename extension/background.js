@@ -580,7 +580,7 @@ async function tryExtractCaptions(url) {
   }
   let response = await sendMessageWithTimeout(
     tab.id,
-    { type: "EXTRACT_CAPTIONS" },
+    { type: "EXTRACT_CAPTIONS", expectedVideoId: targetVid },
     CAPTION_EXTRACT_TIMEOUT_MS
   );
   // Null response = no listener on the tab. Common when the user opened the
@@ -600,7 +600,7 @@ async function tryExtractCaptions(url) {
       await new Promise((r) => setTimeout(r, 100));
       response = await sendMessageWithTimeout(
         tab.id,
-        { type: "EXTRACT_CAPTIONS" },
+        { type: "EXTRACT_CAPTIONS", expectedVideoId: targetVid },
         CAPTION_EXTRACT_TIMEOUT_MS
       );
     } catch (err) {

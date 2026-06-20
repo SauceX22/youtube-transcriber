@@ -18,7 +18,7 @@ function isYouTubeVideoPage(url) {
 
 function getVideoTitle() {
   const meta = document.querySelector('meta[name="title"]');
-  if (meta?.content) return meta.content;
+  if (meta?.content?.trim()) return meta.content.trim();
   const h1 = document.querySelector(
     "h1.ytd-watch-metadata yt-formatted-string"
   );
@@ -83,22 +83,50 @@ function reportPageInfo() {
   }
 }
 
+function schedulePageInfoReports() {
+  reportPageInfo();
+  // YouTube SPA navigation updates URL, title, channel, and transcript panel
+  // on separate ticks. Re-report as hydration settles so we don't persist a
+  // previous watch-page title for the new video.
+  [300, 900, 1800, 3200].forEach((delay) => {
+    setTimeout(reportPageInfo, delay);
+  });
+}
+
+let currentVideoId = extractVideoId(window.location.href);
+let lastVideoIdChangeAt = Date.now();
+
+function markVideoNavigation() {
+  const nextVideoId = extractVideoId(window.location.href);
+  if (nextVideoId !== currentVideoId) {
+    currentVideoId = nextVideoId;
+    lastVideoIdChangeAt = Date.now();
+  }
+}
+
 // Initial report
-reportPageInfo();
+schedulePageInfoReports();
 
 // YouTube SPA navigation — MutationObserver
 let lastUrl = window.location.href;
 let observer = new MutationObserver(() => {
   if (window.location.href !== lastUrl) {
     lastUrl = window.location.href;
-    setTimeout(reportPageInfo, 800);
+    markVideoNavigation();
+    schedulePageInfoReports();
   }
 });
 observer.observe(document.body, { childList: true, subtree: true });
 
 // YouTube's own navigation event
 window.addEventListener("yt-navigate-finish", () => {
-  setTimeout(reportPageInfo, 300);
+  markVideoNavigation();
+  schedulePageInfoReports();
+});
+
+document.addEventListener("yt-page-data-updated", () => {
+  markVideoNavigation();
+  schedulePageInfoReports();
 });
 
 // Close side panel when entering fullscreen
@@ -489,10 +517,30 @@ async function waitForTranscriptReadiness(timeoutMs) {
   return false;
 }
 
-async function tryExtractTranscriptFromPanel() {
+async function tryExtractTranscriptFromPanel(expectedVideoId = null) {
+  const currentVid = extractVideoId(window.location.href);
+  if (expectedVideoId && currentVid !== expectedVideoId) {
+    debugCaptionLog("transcript scrape skipped: video id changed", {
+      expectedVideoId,
+      currentVid,
+    });
+    return [];
+  }
+
   const wasInitiallyExpanded = !!findExpandedTranscriptPanel();
   const preexisting = extractTranscriptSegmentsFromDom(document);
   if (preexisting.length) {
+    // On YouTube SPA navigation, the old transcript panel can briefly survive
+    // under the new /watch URL. Returning those rows would store the previous
+    // video's transcript under the new video's title/id, so let the background
+    // fall back to the server-side caption path during this hydration window.
+    if (Date.now() - lastVideoIdChangeAt < 3500) {
+      debugCaptionLog("transcript scrape skipped: stale rows after navigation", {
+        currentVid,
+        segmentsLen: preexisting.length,
+      });
+      return [];
+    }
     debugCaptionLog("transcript scrape success (panel pre-open)", {
       segmentsLen: preexisting.length,
     });
@@ -526,6 +574,14 @@ async function tryExtractTranscriptFromPanel() {
     // Panel mounted but rows can take a moment to render — bumped from 2.5s
     // to 5s after observing real captioned videos miss the previous deadline.
     const segments = await waitForTranscriptSegments(5000);
+    if (expectedVideoId && extractVideoId(window.location.href) !== expectedVideoId) {
+      debugCaptionLog("transcript scrape discarded: navigated during extraction", {
+        expectedVideoId,
+        currentVid: extractVideoId(window.location.href),
+        segmentsLen: segments.length,
+      });
+      return [];
+    }
     debugCaptionLog("transcript scrape result", {
       opened,
       segmentsLen: segments.length,
@@ -560,7 +616,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         return;
       }
       const currentVid = extractVideoId(window.location.href);
-      const segments = await tryExtractTranscriptFromPanel();
+      const expectedVid =
+        typeof msg.expectedVideoId === "string" ? msg.expectedVideoId : currentVid;
+      const segments = await tryExtractTranscriptFromPanel(expectedVid);
       if (!segments.length) {
         debugCaptionLog("EXTRACT_CAPTIONS no transcript panel", { currentVid });
         sendResponse({ ok: false, error: "no_captions" });
