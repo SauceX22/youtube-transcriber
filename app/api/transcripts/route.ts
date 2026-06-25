@@ -12,6 +12,43 @@ import { isTranscriptionInProgress } from "@/lib/whisper";
 
 type ClientSegment = { start: number; duration?: number; text: string };
 
+function cleanSuppliedMetadata(value: unknown, maxLen: number): string {
+  return typeof value === "string" && value.trim()
+    ? value.trim().slice(0, maxLen)
+    : "";
+}
+
+function isSpotifyUrl(value: string): boolean {
+  try {
+    return new URL(value).hostname.replace(/^www\./, "") === "open.spotify.com";
+  } catch {
+    return false;
+  }
+}
+
+function isGenericSpotifyTitle(value: string): boolean {
+  return /^spotify\s*[-–]\s*web player$/i.test(value.trim());
+}
+
+function cleanSuppliedTitle(value: unknown, maxLen: number, sourceUrl: string): string {
+  const cleaned = cleanSuppliedMetadata(value, maxLen);
+  if (cleaned && isSpotifyUrl(sourceUrl) && isGenericSpotifyTitle(cleaned)) {
+    return "";
+  }
+  return cleaned;
+}
+
+function cleanSuppliedHttpUrl(value: unknown, maxLen: number): string {
+  const cleaned = cleanSuppliedMetadata(value, maxLen);
+  if (!cleaned) return "";
+  try {
+    const parsed = new URL(cleaned);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? cleaned : "";
+  } catch {
+    return "";
+  }
+}
+
 function preferRealMetadata(metaValue: string | null | undefined, suppliedValue: string): string {
   const normalized = metaValue?.trim();
   if (!normalized || normalized.toLowerCase() === "unknown") return suppliedValue;
@@ -32,6 +69,8 @@ function isValidClientSegments(value: unknown): value is ClientSegment[] {
 export async function POST(request: NextRequest) {
   let body: {
     url?: string;
+    pageUrl?: string;
+    videoId?: string;
     lang?: string;
     segments?: unknown;
     title?: string;
@@ -47,8 +86,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { url, lang } = body;
-  if (!url || typeof url !== "string") {
+  const { lang } = body;
+  const url = typeof body.url === "string" ? body.url.trim() : "";
+  if (!url) {
     return NextResponse.json(
       { error: "A YouTube or Spotify URL is required" },
       { status: 400 }
@@ -65,6 +105,22 @@ export async function POST(request: NextRequest) {
     const message = err instanceof Error ? err.message : "Invalid URL";
     return NextResponse.json({ error: message }, { status: 400 });
   }
+  const suppliedVideoId =
+    typeof body.videoId === "string" && /^[A-Za-z0-9_:-]{1,160}$/.test(body.videoId)
+      ? body.videoId
+      : "";
+  const host = new URL(url).hostname.replace(/^www\./, "");
+  const isLinkedInSource =
+    host === "linkedin.com" || host === "licdn.com" || host.endsWith(".licdn.com");
+  const isTwitterSource =
+    host === "x.com" || host === "twitter.com" || host === "mobile.twitter.com";
+  const useSuppliedGenericVideoId =
+    platform === "generic" &&
+    ((isLinkedInSource && suppliedVideoId.startsWith("linkedin:")) ||
+      (isTwitterSource && suppliedVideoId.startsWith("twitter:")));
+  if (useSuppliedGenericVideoId) {
+    videoId = suppliedVideoId;
+  }
 
   // Duplicate detection: return existing record if already saved and has a non-empty transcript
   const existing = await prisma.video.findUnique({ where: { videoId } });
@@ -72,7 +128,25 @@ export async function POST(request: NextRequest) {
     const transcript = existing.transcript as string;
     const hasTranscript = transcript && transcript !== "[]";
     if (hasTranscript) {
-      return NextResponse.json({ ...existing, duplicate: true });
+      const suppliedTitle = cleanSuppliedTitle(body.title, 512, url);
+      const suppliedAuthor = cleanSuppliedMetadata(body.author, 256);
+      const suppliedChannelUrl = cleanSuppliedMetadata(body.channelUrl, 1024);
+      const suppliedPageUrl = cleanSuppliedHttpUrl(body.pageUrl, 2048);
+      const nextData = {
+        title: suppliedTitle || existing.title,
+        author: suppliedAuthor || existing.author,
+        channelUrl: suppliedChannelUrl || existing.channelUrl,
+        videoUrl: suppliedPageUrl || existing.videoUrl,
+      };
+      const shouldUpdate =
+        nextData.title !== existing.title ||
+        nextData.author !== existing.author ||
+        nextData.channelUrl !== existing.channelUrl ||
+        nextData.videoUrl !== existing.videoUrl;
+      const video = shouldUpdate
+        ? await prisma.video.update({ where: { videoId }, data: nextData })
+        : existing;
+      return NextResponse.json({ ...video, duplicate: true });
     }
     // Existing record has empty transcript — re-fetch and update below
   }
@@ -87,14 +161,8 @@ export async function POST(request: NextRequest) {
       startMs: Math.round(s.start * 1000),
       durationMs: Math.round((s.duration ?? 0) * 1000),
     }));
-    const suppliedAuthor =
-      typeof body.author === "string" && body.author.trim()
-        ? body.author.trim().slice(0, 256)
-        : "";
-    const suppliedChannelUrl =
-      typeof body.channelUrl === "string" && body.channelUrl.trim()
-        ? body.channelUrl.trim().slice(0, 1024)
-        : "";
+    const suppliedAuthor = cleanSuppliedMetadata(body.author, 256);
+    const suppliedChannelUrl = cleanSuppliedMetadata(body.channelUrl, 1024);
     try {
       const meta = await fetchMetadata(videoId);
       const data = {
@@ -148,17 +216,32 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await getVideoTranscript(url, lang);
+    const suppliedTitle = cleanSuppliedTitle(body.title, 512, url);
+    const suppliedAuthor = cleanSuppliedMetadata(body.author, 256);
+    const suppliedChannelUrl = cleanSuppliedMetadata(body.channelUrl, 1024);
+    const suppliedPageUrl = cleanSuppliedHttpUrl(body.pageUrl, 2048);
+    const persistedPlatform =
+      videoId.startsWith("linkedin:") ? "linkedin" : videoId.startsWith("twitter:") ? "twitter" : platform;
+    const title = useSuppliedGenericVideoId
+      ? suppliedTitle || result.title
+      : preferRealMetadata(result.title, suppliedTitle);
+    const author = useSuppliedGenericVideoId
+      ? suppliedAuthor || result.author
+      : preferRealMetadata(result.author, suppliedAuthor);
+    const channelUrl = useSuppliedGenericVideoId
+      ? suppliedChannelUrl || result.channelUrl
+      : preferRealMetadata(result.channelUrl, suppliedChannelUrl);
 
     const data = {
-      videoId: result.videoId,
-      title: result.title,
-      author: result.author,
-      channelUrl: result.channelUrl,
+      videoId: useSuppliedGenericVideoId ? suppliedVideoId : result.videoId,
+      title,
+      author,
+      channelUrl,
       thumbnailUrl: result.thumbnailUrl || (platform === "youtube" ? `https://i.ytimg.com/vi/${result.videoId}/hqdefault.jpg` : ""),
-      videoUrl: url,
+      videoUrl: suppliedPageUrl || url,
       transcript: JSON.stringify(result.transcript),
       source: result.source,
-      platform,
+      platform: persistedPlatform,
     };
 
     const video = existing

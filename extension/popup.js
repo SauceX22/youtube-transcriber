@@ -197,21 +197,128 @@ const SUMMARY_EXPERIENCE_DEFAULT_VERSION = "2026-06-native-summary-default";
 let expandedTranscriptId = null;
 let lastRecentRenderHash = "";
 
+function isTwitterStatusUrl(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, "");
+    return (
+      (host === "x.com" || host === "twitter.com" || host === "mobile.twitter.com") &&
+      /^\/[^/]+\/status(?:es)?\/[0-9]+/.test(u.pathname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isTwitterUrl(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, "");
+    return host === "x.com" || host === "twitter.com" || host === "mobile.twitter.com";
+  } catch {
+    return false;
+  }
+}
+
+function isLinkedInUrl(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, "");
+    return host === "linkedin.com";
+  } catch {
+    return false;
+  }
+}
+
+function isLinkedInFeedUrl(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, "");
+    return host === "linkedin.com" && /^\/feed\/?$/.test(u.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function isSpotifyUrl(url) {
+  try {
+    const u = new URL(url);
+    return u.hostname.replace(/^www\./, "") === "open.spotify.com";
+  } catch {
+    return false;
+  }
+}
+
+function isGenericSpotifyTitle(title) {
+  const cleaned = (title || "").trim();
+  return (
+    /^spotify\s*[-–]\s*web player$/i.test(cleaned) ||
+    /^your library$/i.test(cleaned)
+  );
+}
+
+function cleanPageTitleForUrl(title, url) {
+  const cleaned = (title || "").trim();
+  if (isSpotifyUrl(url) && isGenericSpotifyTitle(cleaned)) return "";
+  return cleaned;
+}
+
 function pageInfoFromTab(tab, stored = {}) {
-  const url = tab?.url || stored.url || "";
-  const tabVideoId = extractVideoId(url);
-  const videoId = tabVideoId || stored.videoId;
+  const tabUrl = tab?.url || "";
+  const storedUrl = stored.url || "";
+  const isStoredLinkedIn = isLinkedInUrl(tabUrl) && stored.platform === "linkedin";
+  const isStoredTwitter = isTwitterUrl(tabUrl) && stored.platform === "twitter";
+  const isStoredSpotify = isSpotifyUrl(tabUrl) && stored.platform === "spotify" && !!stored.videoId;
+  const url = isStoredLinkedIn || isStoredTwitter || isStoredSpotify ? storedUrl || tabUrl : tabUrl || storedUrl;
+  const tabVideoId = extractVideoId(tabUrl || url);
+  const isTwitter = isTwitterUrl(tabUrl || url);
+  const isTwitterStatus = isTwitterStatusUrl(tabUrl || url);
+  const tabIsTwitter = isTwitterUrl(tabUrl);
+  const tabIsTwitterStatus = isTwitterStatusUrl(tabUrl);
+  const linkedInStoredMatches =
+    isStoredLinkedIn &&
+    !!stored.videoId &&
+    (stored.pageUrl === tabUrl ||
+      isLinkedInFeedUrl(tabUrl) ||
+      (!!tabVideoId && stored.videoId === tabVideoId));
+  const twitterStoredMatches =
+    isStoredTwitter &&
+    !!stored.videoId &&
+    (stored.pageUrl === tabUrl ||
+      (!tabIsTwitterStatus && tabIsTwitter) ||
+      (!!tabVideoId && stored.videoId === tabVideoId));
   const storedMatchesTab =
-    (!!stored.url && stored.url === url) ||
-    (!!stored.videoId && !!tabVideoId && stored.videoId === tabVideoId);
+    (!!stored.url && stored.url === (tabUrl || url)) ||
+    (!!stored.videoId && !!tabVideoId && stored.videoId === tabVideoId) ||
+    isStoredSpotify ||
+    linkedInStoredMatches ||
+    twitterStoredMatches;
+  const videoId =
+    isTwitter && (!isTwitterStatus || !storedMatchesTab)
+      ? null
+      : tabVideoId || stored.videoId;
+  const storedTitle = cleanPageTitleForUrl(stored.title, storedUrl || tabUrl);
+  const tabTitle = cleanPageTitleForUrl(tab?.title, tabUrl || storedUrl);
   return {
     url,
-    title: storedMatchesTab ? stored.title || tab?.title || "" : tab?.title || "",
+    pageUrl: storedMatchesTab ? stored.pageUrl || tabUrl || storedUrl : tabUrl || storedUrl,
+    title: storedMatchesTab ? storedTitle || tabTitle : tabTitle,
     author: storedMatchesTab ? stored.author || "" : "",
     channelUrl: storedMatchesTab ? stored.channelUrl || "" : "",
     videoId,
+    platform: storedMatchesTab ? stored.platform || "" : "",
     isLive: storedMatchesTab ? !!stored.isLive : false,
   };
+}
+
+async function requestLivePageInfo(tab) {
+  if (!tab?.id) return null;
+  try {
+    const info = await chrome.tabs.sendMessage(tab.id, { type: "GET_PAGE_INFO" });
+    return info?.ok && info.url ? info : null;
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2651,6 +2758,12 @@ async function init() {
       const stored = await chrome.storage.session.get(`tab_${tab.id}`);
       storedPageInfo = stored[`tab_${tab.id}`] || {};
     } catch { /* ignore */ }
+    if (isSpotifyUrl(tab.url) && !cleanPageTitleForUrl(storedPageInfo.title, storedPageInfo.url || tab.url)) {
+      const livePageInfo = await requestLivePageInfo(tab);
+      if (livePageInfo?.title) {
+        storedPageInfo = livePageInfo;
+      }
+    }
     pageInfo = pageInfoFromTab(tab, storedPageInfo);
     currentTabUrl = tab.url;
     currentTabId = tab.id;
