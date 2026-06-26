@@ -85,6 +85,7 @@ const el = {
   offlineStartWrap: document.getElementById("offlineStartWrap"),
   offlineCopyWrap: document.getElementById("offlineCopyWrap"),
   offlineStartError: document.getElementById("offlineStartError"),
+  offlineHeading: document.getElementById("offlineHeading"),
   offlineSub: document.getElementById("offlineSub"),
   setupCommand: document.getElementById("setupCommand"),
   btnCopySetup: document.getElementById("btnCopySetup"),
@@ -1822,7 +1823,7 @@ function sendMsg(msg) {
     chrome.runtime.sendMessage(msg, (response) => {
       if (chrome.runtime.lastError) {
         const error = chrome.runtime.lastError.message || "runtime_send_failed";
-        console.warn("[ytt-popup] sendMessage failed", {
+        console.debug("[ytt-popup] sendMessage failed", {
           type: msg?.type,
           error,
           elapsedMs: Date.now() - startedAt,
@@ -1831,7 +1832,7 @@ function sendMsg(msg) {
         return;
       }
       if (response === undefined) {
-        console.warn("[ytt-popup] sendMessage returned undefined", {
+        console.debug("[ytt-popup] sendMessage returned undefined", {
           type: msg?.type,
           elapsedMs: Date.now() - startedAt,
         });
@@ -1969,13 +1970,15 @@ async function detectNativeHost() {
 
 function refreshOfflineStartUI() {
   const haveHost = nativeHostAvailable === true;
+  el.offlineHeading.textContent = "Local server is not running";
   el.offlineStartWrap.hidden = !haveHost;
   el.offlineCopyWrap.hidden = haveHost;
-  if (!haveHost) {
-    // Bake the extension ID into the setup command so the user can copy + run.
-    const extId = chrome.runtime.id;
-    el.setupCommand.textContent = `npm run install-native-host -- --ext-id=${extId}`;
-    el.setupCommand.dataset.fullCmd = `npm run install-native-host -- --ext-id=${extId}`;
+  if (haveHost) {
+    el.offlineSub.textContent = "Start the local app from here, then the panel will reconnect.";
+  } else {
+    el.offlineSub.textContent = "Start Transcriber in Terminal, then check again.";
+    el.setupCommand.textContent = "npm run dev";
+    el.setupCommand.dataset.fullCmd = "npm run dev";
   }
 }
 
@@ -3145,7 +3148,7 @@ async function doTranscribe() {
     processQueue();
   } else {
     await sendMsg({ type: "CLEAR_TRANSCRIPTION" });
-    console.warn("[ytt-popup] TRANSCRIBE failed", res);
+    console.debug("[ytt-popup] TRANSCRIBE failed", res);
     if (isServerDownError(res?.error)) {
       init();
       return;
@@ -3635,9 +3638,8 @@ async function setModeUI(mode) {
   el.cloudAccountSection.hidden = mode !== "cloud";
   applyTranscribeActionUI();
   applyFooterLink(mode);
-  // Server stop control: only useful in self-hosted mode AND when the native
-  // host is installed (otherwise we have no way to stop). detectNativeHost
-  // sets nativeHostAvailable; if it hasn't run yet, fire-and-forget.
+  // Server controls are useful in self-hosted mode. The local service state
+  // wins over native-host state, because the server may already be running.
   await refreshServerSection(mode);
   // Destinations always render. Obsidian is client-side (works in any mode);
   // cloud-only adapters show as teasers with a Sign in CTA in local mode.
@@ -3649,22 +3651,27 @@ async function refreshServerSection(mode) {
     el.serverSection.hidden = true;
     return;
   }
-  // Need native host to actually start/stop. If we don't know yet, probe.
-  if (nativeHostAvailable === undefined || nativeHostAvailable === null) {
-    await detectNativeHost();
-  }
-  // Without the native host there's nothing to do here — the offline state's
-  // setup disclosure remains the install path. Hide the whole section.
-  if (!nativeHostAvailable) {
-    el.serverSection.hidden = true;
-    return;
-  }
   el.serverSection.hidden = false;
   el.stopServerHint.hidden = true;
 
-  // Probe server state. Cheap — bg already polls and caches the result.
+  // Probe server state first. If localhost is already online, show Stop even
+  // when the native host is unavailable or crashed.
   const serviceRes = await sendMsg({ type: "CHECK_SERVICE" });
   const serverOnline = !!(serviceRes?.success && serviceRes.data?.online);
+  if (serverOnline) {
+    el.serverStatus.textContent = "Server running";
+    el.serverStatus.hidden = false;
+    el.btnStartServer.hidden = true;
+    el.btnStopServer.hidden = false;
+    return;
+  }
+
+  // Need native host to start a stopped server. If we don't know yet, probe so
+  // Start can report a clear helper error if it is clicked.
+  if (nativeHostAvailable === undefined || nativeHostAvailable === null) {
+    await detectNativeHost();
+  }
+
   el.serverStatus.textContent = serverOnline ? "Server running" : "Server stopped";
   el.serverStatus.hidden = false;
   el.btnStartServer.hidden = serverOnline;
@@ -3695,7 +3702,14 @@ async function startServerClicked() {
       el.stopServerHint.hidden = false;
     }
   } catch (e) {
-    el.stopServerHint.textContent = `Start failed: ${e.message}`;
+    if (e.message === "native_host_unavailable" ||
+        /Specified native messaging host not found/i.test(e.message)) {
+      nativeHostAvailable = false;
+      el.stopServerHint.textContent =
+        "Start helper is not connected. Reload the extension, then try Start again.";
+    } else {
+      el.stopServerHint.textContent = `Start failed: ${e.message}`;
+    }
     el.stopServerHint.hidden = false;
   } finally {
     nativeStartInFlight = false;

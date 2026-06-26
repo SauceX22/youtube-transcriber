@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Transcriber for YouTube",
+  "name": "Transcriber",
   "version": "1.6.28",
   "description": "One-click transcription for videos and podcasts. Works with transcribed.dev or your own self-hosted instance.",
   "content_security_policy": {

@@ -73,14 +73,14 @@ for (const file of COPY_FILES) {
   copyFile(src, path.join(DIST, file));
 }
 
-// --- Dev tagging: rename + pin key so dev build has stable, distinguishable ID ---
+// --- Dev tagging: pin key so dev build has stable ID ---
 
 if (IS_DEV) {
   const manifestPath = path.join(DIST, "manifest.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   const label = DEV_LABEL || "dev";
-  manifest.name = `${manifest.name} (${label})`;
-  manifest.short_name = DEV_SHORT_NAME || "Transcriber dev";
+  manifest.name = "Transcriber";
+  manifest.short_name = DEV_SHORT_NAME || "Transcriber";
   if (DEV_LABEL) {
     const versionLabel = DEV_LABEL.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     if (versionLabel) manifest.version_name = `${manifest.version}-${versionLabel}`;

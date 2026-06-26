@@ -573,6 +573,9 @@ function sendMessageWithTimeout(tabId, message, timeoutMs) {
 }
 
 async function tryExtractCaptions(url) {
+  const targetVid = youtubeVideoId(url);
+  if (!targetVid) return null;
+
   const tab = await findYouTubeTabForUrl(url);
   if (!tab?.id) {
     console.log("[ytt-bg] caption fast-path: no matching youtube tab", { url });
