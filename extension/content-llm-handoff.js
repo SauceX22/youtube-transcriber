@@ -11,6 +11,7 @@
   const EDITOR_WAIT_MS = 12000;
   const POLL_INTERVAL_MS = 250;
   const POST_INJECT_DELAY_MS = 500;
+  const SEND_WAIT_MS = 5000;
 
   // Per-provider DOM config. Selectors are Claude/ChatGPT's own published
   // markup — the only thing that crosses over between providers is the
@@ -78,12 +79,109 @@
       .replace(/'/g, "&#39;");
   }
 
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
   function findBy(selectors) {
     for (const sel of selectors) {
       const el = document.querySelector(sel);
       if (el) return el;
     }
     return null;
+  }
+
+  function isVisible(el) {
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+    return (
+      rect.width > 0 &&
+      rect.height > 0 &&
+      style.visibility !== "hidden" &&
+      style.display !== "none"
+    );
+  }
+
+  function isDisabled(el) {
+    return (
+      el.disabled ||
+      el.getAttribute("aria-disabled") === "true" ||
+      el.closest("[aria-disabled='true']")
+    );
+  }
+
+  function findSendButton(config) {
+    for (const sel of config.sendSelectors) {
+      const candidates = [...document.querySelectorAll(sel)];
+      const ready = candidates.find((el) => isVisible(el) && !isDisabled(el));
+      if (ready) return ready;
+    }
+    return null;
+  }
+
+  async function waitForSendButton(config, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const send = findSendButton(config);
+      if (send) return send;
+      await sleep(POLL_INTERVAL_MS);
+    }
+    return findSendButton(config);
+  }
+
+  function setTextareaValue(textarea, value) {
+    const proto = Object.getPrototypeOf(textarea);
+    const descriptor = Object.getOwnPropertyDescriptor(proto, "value");
+    if (descriptor?.set) {
+      descriptor.set.call(textarea, value);
+    } else {
+      textarea.value = value;
+    }
+  }
+
+  function insertPlainText(editor, prompt) {
+    editor.focus();
+
+    const selection = window.getSelection();
+    if (selection) {
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+
+    const inserted = document.execCommand("insertText", false, prompt);
+    if (inserted) return true;
+
+    const paragraphs = String(prompt)
+      .split(/\n{2,}/)
+      .map((part) => `<p>${escapeForHtml(part).replace(/\n/g, "<br>")}</p>`)
+      .join("");
+    editor.innerHTML = paragraphs || "<p><br></p>";
+    return false;
+  }
+
+  function fireInputEvents(editor) {
+    try {
+      editor.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          cancelable: false,
+          inputType: "insertText",
+          data: null,
+        })
+      );
+    } catch {
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    editor.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function editorHasText(editor) {
+    if (editor.tagName.toLowerCase() === "textarea") {
+      return editor.value.trim().length > 0;
+    }
+    return editor.textContent.trim().length > 0;
   }
 
   function waitForEditor(config, timeoutMs) {
@@ -123,16 +221,19 @@
   }
 
   function injectPrompt(editor, prompt) {
-    // ProseMirror rebuilds its internal doc from the DOM on focus/input, so
-    // setting innerHTML + dispatching an input event is enough to seed the
-    // editor with text. Plain textarea fallback uses .value.
+    // ChatGPT/Claude keep their own composer state; browser editing APIs make
+    // that state update like a real paste/type instead of only painting DOM.
     if (editor.tagName.toLowerCase() === "textarea") {
-      editor.value = prompt;
+      setTextareaValue(editor, prompt);
     } else {
-      editor.innerHTML = `<p>${escapeForHtml(prompt)}</p>`;
+      insertPlainText(editor, prompt);
     }
     editor.focus();
-    editor.dispatchEvent(new Event("input", { bubbles: true }));
+    fireInputEvents(editor);
+  }
+
+  function submitPrompt(editor, send) {
+    send.click();
   }
 
   async function run() {
@@ -162,15 +263,10 @@
 
     // Give the send button a moment to re-enable after input fires,
     // then submit so the user's click-to-summarize feels end-to-end.
-    await new Promise((r) => setTimeout(r, POST_INJECT_DELAY_MS));
-    const send = findBy(config.sendSelectors);
+    await sleep(POST_INJECT_DELAY_MS);
+    const send = await waitForSendButton(config, SEND_WAIT_MS);
     if (send) {
-      try {
-        send.disabled = false;
-      } catch {
-        // some builds wrap the attribute in getters — ignore
-      }
-      send.click();
+      submitPrompt(editor, send);
     }
   }
 

@@ -1,0 +1,50 @@
+@import url("../design-system/tokens/index.css");
+
+:root {
+  /* Extension compatibility roles mapped from shared design-system tokens. */
+  --bg: var(--ds-color-bg);
+  --panel: var(--ds-color-panel);
+  --panel-2: var(--ds-color-panel-2);
+  --border: var(--ds-color-border);
+  --border-hover: var(--ds-color-border-hover);
+  --text: var(--ds-color-text);
+  --muted: var(--ds-color-muted);
+  --muted-2: var(--ds-color-muted-2);
+  --muted-3: var(--ds-color-muted-3);
+  --accent: var(--ds-color-accent);
+  --destructive: var(--ds-color-destructive);
+  --error: var(--ds-color-error);
+  --success: var(--ds-color-success);
+  --white-5: var(--ds-color-white-5);
+  --white-10: var(--ds-color-white-10);
+  --white-15: var(--ds-color-white-15);
+  --white-20: var(--ds-color-white-20);
+  --white-60: var(--ds-color-white-60);
+  --white-80: var(--ds-color-white-80);
+  --white-90: var(--ds-color-white-90);
+
+  --font-sans: var(--ds-font-sans);
+  --font-mono: var(--ds-font-mono);
+  --text-heading-size: var(--ds-text-heading-size);
+  --text-heading-line: var(--ds-text-heading-line);
+  --text-panel-title-size: var(--ds-text-panel-title-size);
+  --text-panel-title-line: var(--ds-text-panel-title-line);
+  --text-list-title-size: var(--ds-text-list-title-size);
+  --text-body-size: var(--ds-text-body-size);
+  --text-row-title-size: var(--ds-text-row-title-size);
+  --text-caption-size: var(--ds-text-caption-size);
+  --text-label-size: var(--ds-text-label-size);
+  --text-micro-size: var(--ds-text-micro-size);
+
+  --space-1: var(--ds-space-1);
+  --space-2: var(--ds-space-2);
+  --space-3: var(--ds-space-3);
+  --space-4: var(--ds-space-4);
+  --space-5: var(--ds-space-5);
+
+  --radius-sm: var(--ds-radius-sm);
+  --radius-md: var(--ds-radius-md);
+  --radius-lg: var(--ds-radius-lg);
+  --radius-xl: var(--ds-radius-xl);
+  --radius-full: var(--ds-radius-full);
+}

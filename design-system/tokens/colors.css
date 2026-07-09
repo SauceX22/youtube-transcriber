@@ -1,0 +1,33 @@
+:root {
+  --ds-color-bg: #0a0a0a;
+  --ds-color-bg-hsl: 0 0% 4%;
+  --ds-color-panel: #121212;
+  --ds-color-panel-hsl: 0 0% 7%;
+  --ds-color-panel-2: #171717;
+  --ds-color-panel-2-hsl: 0 0% 9%;
+  --ds-color-border: #242424;
+  --ds-color-border-hsl: 0 0% 14%;
+  --ds-color-border-hover: rgba(255, 255, 255, 0.30);
+  --ds-color-text: #fafafa;
+  --ds-color-text-hsl: 0 0% 98%;
+  --ds-color-muted: #b3b3b3;
+  --ds-color-muted-hsl: 0 0% 70%;
+  --ds-color-muted-2: #8c8c8c;
+  --ds-color-muted-2-hsl: 0 0% 55%;
+  --ds-color-muted-3: #666666;
+  --ds-color-muted-3-hsl: 0 0% 40%;
+  --ds-color-accent: #a58959;
+  --ds-color-accent-hsl: 39 30% 50%;
+  --ds-color-destructive: rgba(239, 68, 68, 0.80);
+  --ds-color-error: #f87171;
+  --ds-color-error-hsl: 0 91% 71%;
+  --ds-color-success: #a58959;
+  --ds-color-success-hsl: 39 30% 50%;
+  --ds-color-white-5: rgba(255, 255, 255, 0.05);
+  --ds-color-white-10: rgba(255, 255, 255, 0.10);
+  --ds-color-white-15: rgba(255, 255, 255, 0.15);
+  --ds-color-white-20: rgba(255, 255, 255, 0.20);
+  --ds-color-white-60: rgba(255, 255, 255, 0.60);
+  --ds-color-white-80: rgba(255, 255, 255, 0.80);
+  --ds-color-white-90: rgba(255, 255, 255, 0.90);
+}

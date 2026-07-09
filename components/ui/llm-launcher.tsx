@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 
 interface LlmProvider {
   id: string;
@@ -52,6 +53,14 @@ const OPEN_URLS: Record<string, string> = {
 };
 
 const STORAGE_KEY = "llm-launcher-last-provider";
+const PROVIDER_URL_LENGTH_LIMITS: Record<string, number> = {
+  chatgpt: 4000,
+  claude: 6000,
+};
+
+function openProviderUrl(url: string) {
+  window.open(url, "_blank", "noopener,noreferrer");
+}
 
 function buildSummarizePrompt(title: string, transcript: string): string {
   return `Summarize the following transcript from "${title}". Focus on the main topics, key insights, and any actionable takeaways.\n\nTranscript:\n\n${transcript}`;
@@ -66,6 +75,7 @@ interface LlmLauncherProps {
 
 export function LlmLauncher({ videoId, videoTitle, onToast, variant = "menu" }: LlmLauncherProps) {
   const [open, setOpen] = useState(false);
+  const [inlineTooltip, setInlineTooltip] = useState<{ top: number; left: number; providerName: string } | null>(null);
   // Lazy init avoids the React 19 set-state-in-effect warning. Same-component
   // writes (line ~93) keep this in sync; cross-tab updates are an accepted
   // edge case.
@@ -102,6 +112,19 @@ export function LlmLauncher({ videoId, videoTitle, onToast, variant = "menu" }: 
     closeTimerRef.current = setTimeout(() => setOpen(false), 140);
   }, []);
 
+  const showInlineTooltip = useCallback((button: HTMLButtonElement, providerName: string) => {
+    const rect = button.getBoundingClientRect();
+    setInlineTooltip({
+      top: rect.top - 8,
+      left: rect.left + rect.width / 2,
+      providerName,
+    });
+  }, []);
+
+  const hideInlineTooltip = useCallback(() => {
+    setInlineTooltip(null);
+  }, []);
+
   const launchWithProvider = useCallback(
     async (provider: LlmProvider) => {
       setOpen(false);
@@ -132,13 +155,23 @@ export function LlmLauncher({ videoId, videoTitle, onToast, variant = "menu" }: 
 
       if (provider.urlTemplate && !provider.clipboardFallback) {
         const encoded = encodeURIComponent(prompt);
-        // Truncate if URL would be excessively long (browsers cap around 2000-8000 chars)
-        const maxLen = 6000;
-        const url =
-          encoded.length > maxLen
-            ? provider.urlTemplate.replace("{prompt}", encoded.slice(0, maxLen))
-            : provider.urlTemplate.replace("{prompt}", encoded);
-        window.open(url, "_blank", "noopener,noreferrer");
+        const url = provider.urlTemplate.replace("{prompt}", encoded);
+        const maxUrlLength = PROVIDER_URL_LENGTH_LIMITS[provider.id] ?? 6000;
+        if (url.length <= maxUrlLength) {
+          openProviderUrl(url);
+          return;
+        }
+
+        try {
+          await navigator.clipboard.writeText(prompt);
+          onToast?.("Prompt copied — paste into " + provider.name + " (⌘V)");
+        } catch {
+          onToast?.("Prompt too long for URL; copy failed");
+        }
+        const fallbackUrl = OPEN_URLS[provider.id];
+        if (fallbackUrl) {
+          openProviderUrl(fallbackUrl);
+        }
       } else {
         // Clipboard fallback — copy prompt then open the provider
         try {
@@ -149,7 +182,7 @@ export function LlmLauncher({ videoId, videoTitle, onToast, variant = "menu" }: 
         }
         const fallbackUrl = OPEN_URLS[provider.id];
         if (fallbackUrl) {
-          window.open(fallbackUrl, "_blank", "noopener,noreferrer");
+          openProviderUrl(fallbackUrl);
         }
       }
     },
@@ -163,6 +196,10 @@ export function LlmLauncher({ videoId, videoTitle, onToast, variant = "menu" }: 
         ...PROVIDERS.filter((p) => p.id !== lastProvider),
       ]
     : PROVIDERS;
+  const inlineProviders = [
+    ...PROVIDERS.filter((p) => p.id === "claude"),
+    ...PROVIDERS.filter((p) => p.id === "chatgpt"),
+  ];
 
   const providerMenu = open && (
     <div
@@ -197,53 +234,55 @@ export function LlmLauncher({ videoId, videoTitle, onToast, variant = "menu" }: 
   );
 
   if (variant === "inline") {
+    const pasteKey =
+      typeof navigator !== "undefined" && /mac/i.test(navigator.userAgent)
+        ? "⌘+V"
+        : "Ctrl+V";
+
     return (
-      <div ref={dropdownRef} className="group/llm relative inline-flex h-8 items-center gap-1">
-        <button
-          type="button"
-          title="Summarize with Claude or ChatGPT"
-          aria-label="Summarize with Claude or ChatGPT"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-white/60 transition hover:bg-white/5 hover:text-white/90 active:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
-          onClick={(e) => {
-            e.stopPropagation();
-            openMenu();
-          }}
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 20 20"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.75"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M5.5 3.5h6.25L15 6.75v9.75H5.5z" />
-            <path d="M11.5 3.75V7h3.25" />
-            <path d="M7.75 9.25h4.5M7.75 12h4.5M7.75 14.75h2.25" />
-            <path d="M15.25 10.25l.4.95.95.4-.95.4-.4.95-.4-.95-.95-.4.95-.4z" />
-          </svg>
-        </button>
-        <div className="flex max-w-0 items-center gap-1 opacity-0 transition-all duration-200 group-hover/llm:max-w-20 group-hover/llm:opacity-100 group-focus-within/llm:max-w-20 group-focus-within/llm:opacity-100">
-          {sortedProviders.map((provider) => (
+      <>
+        <div className="inline-flex h-8 items-center gap-1">
+          {inlineProviders.map((provider) => (
             <button
               key={provider.id}
               type="button"
               title={`Open in ${provider.name}`}
               aria-label={`Open in ${provider.name}`}
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/60 transition hover:bg-white/5 hover:text-white/90 active:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+              className="group/provider relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/60 transition hover:bg-white/5 hover:text-white/90 active:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+              onMouseEnter={(e) => {
+                if (provider.clipboardFallback) showInlineTooltip(e.currentTarget, provider.name);
+              }}
+              onMouseLeave={hideInlineTooltip}
+              onFocus={(e) => {
+                if (provider.clipboardFallback) showInlineTooltip(e.currentTarget, provider.name);
+              }}
+              onBlur={hideInlineTooltip}
               onClick={(e) => {
                 e.stopPropagation();
                 launchWithProvider(provider);
               }}
             >
-              {provider.icon}
+              <span className="inline-flex transition-transform duration-300 group-hover/provider:scale-110 group-hover/provider:-rotate-6">
+                {provider.icon}
+              </span>
             </button>
           ))}
         </div>
-        {providerMenu}
-      </div>
+        {inlineTooltip && typeof document !== "undefined" && createPortal(
+          <span
+            style={{
+              position: "fixed",
+              top: inlineTooltip.top,
+              left: inlineTooltip.left,
+              transform: "translate(-50%, -100%)",
+            }}
+            className="pointer-events-none z-[9999] whitespace-nowrap rounded-md border border-white/10 bg-[hsl(var(--panel))] px-2.5 py-1.5 text-[11px] text-white/50 opacity-100 shadow-lg"
+          >
+            <span className="text-white/70">{pasteKey}</span> to paste into {inlineTooltip.providerName}
+          </span>,
+          document.body
+        )}
+      </>
     );
   }
 

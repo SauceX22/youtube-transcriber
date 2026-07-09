@@ -25,6 +25,12 @@ interface YtDlpInfo {
   webpage_url?: string;
   thumbnail?: string;
   duration?: number;
+  acodec?: string;
+  audio_ext?: string;
+  formats?: Array<{
+    acodec?: string;
+    audio_ext?: string;
+  }>;
 }
 
 async function fetchVideoInfo(url: string): Promise<YtDlpInfo> {
@@ -67,6 +73,23 @@ function platformFromInfo(info: YtDlpInfo): string {
   if (raw.startsWith("odysee")) return "odysee";
   if (raw.startsWith("streamable")) return "streamable";
   return raw;
+}
+
+function hasAudioTrack(info: YtDlpInfo): boolean | null {
+  if (info.acodec && info.acodec !== "none") return true;
+  if (info.audio_ext && info.audio_ext !== "none") return true;
+  if (!info.formats?.length) {
+    return info.acodec === "none" || info.audio_ext === "none" ? false : null;
+  }
+
+  let sawExplicitNoAudio = false;
+  for (const format of info.formats) {
+    if (format.acodec && format.acodec !== "none") return true;
+    if (format.audio_ext && format.audio_ext !== "none") return true;
+    if (format.acodec === "none" || format.audio_ext === "none") sawExplicitNoAudio = true;
+    if (!format.acodec && !format.audio_ext) return null;
+  }
+  return sawExplicitNoAudio ? false : null;
 }
 
 async function downloadGenericAudio(url: string, outputId: string): Promise<string> {
@@ -216,6 +239,10 @@ export async function getGenericTranscript(
   const metadata = metadataFromInfo(info, platform);
 
   console.log(`[generic] Platform=${platform} id=${info.id} title="${metadata.title}"`);
+
+  if (hasAudioTrack(info) === false) {
+    throw new Error("This video does not include an audio track, so there is nothing to transcribe.");
+  }
 
   transcriptionProgress.emit("progress", {
     stage: "downloading",

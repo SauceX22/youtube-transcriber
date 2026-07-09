@@ -1,14 +1,20 @@
+@import "../design-system/tokens/colors.css";
+@import "../design-system/tokens/typography.css";
+@import "../design-system/tokens/spacing.css";
+@import "../design-system/tokens/radius.css";
+@import "../design-system/tokens/motion.css";
 @import "tailwindcss";
 
 :root {
-  --bg: 0 0% 4%;
-  --panel: 0 0% 7%;
-  --panel-2: 0 0% 9%;
-  --border: 0 0% 14%;
-  --text: 0 0% 98%;
-  --muted: 0 0% 70%;
-  --muted-2: 0 0% 55%;
-  --accent: 38 30% 50%;
+  /* Web compatibility roles mapped from shared design-system tokens. */
+  --bg: var(--ds-color-bg-hsl);
+  --panel: var(--ds-color-panel-hsl);
+  --panel-2: var(--ds-color-panel-2-hsl);
+  --border: var(--ds-color-border-hsl);
+  --text: var(--ds-color-text-hsl);
+  --muted: var(--ds-color-muted-hsl);
+  --muted-2: var(--ds-color-muted-2-hsl);
+  --accent: var(--ds-color-accent-hsl);
 
   /* --- Edges (prefer over 1px borders) ---
      Inner-shadow rings simulate borders without the harsh hairline.

@@ -1,0 +1,25 @@
+:root {
+  --motion-menu-duration: 0.12s;
+  --motion-hover-duration: 0.15s;
+  --motion-drawer-close-duration: 0.28s;
+  --motion-drawer-close-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --motion-drawer-open-duration: 0.42s;
+  --motion-drawer-open-ease: cubic-bezier(0.34, 1.56, 0.3, 1);
+  --motion-drawer-opacity-close-duration: 0.22s;
+  --motion-drawer-opacity-open-duration: 0.65s;
+  --motion-spinner-duration: 0.8s;
+  --motion-skeleton-duration: 1.4s;
+  --motion-complete-signal-duration: 1.4s;
+  --motion-complete-collapse-duration: 0.4s;
+  --motion-complete-collapse-ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --motion-new-row-duration: 1.8s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

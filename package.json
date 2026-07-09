@@ -19,7 +19,8 @@
     "install-native-host": "node scripts/install-native-host.js",
     "uninstall-native-host": "node scripts/install-native-host.js --remove",
     "build:ext": "node extension/build.js",
-    "build:ext:dev": "node extension/build.js --dev"
+    "build:ext:dev": "node extension/build.js --dev",
+    "workbench:ext": "python3 -m http.server 19721 --bind 127.0.0.1"
   },
   "keywords": [],
   "author": "",

@@ -19,6 +19,7 @@ const { execFileSync } = require("child_process");
 const IS_DEV = process.argv.includes("--dev");
 const SRC = __dirname;
 const DIST = path.join(SRC, "dist");
+const DESIGN_SYSTEM_SRC = path.join(SRC, "..", "design-system");
 const DEV_KEY_PATH = path.join(SRC, "..", ".dev", "extension-dev-key.pem");
 const LEGACY_DEV_KEY_PATH = path.join(SRC, "dev-key.pem");
 const DEV_LABEL = (process.env.EXTENSION_DEV_LABEL || "").trim();
@@ -31,12 +32,18 @@ const COPY_FILES = [
   "popup.html",
   "popup.js",
   "popup.css",
+  "foundations.css",
+  "motion.css",
+  "ui-icons.js",
   "destination-connected.html",
   "destination-connected.js",
   "setup-link.css",
   "content.js",
   "content-spotify.js",
   "content-substack.js",
+  "content-twitter.js",
+  "content-linkedin-main.js",
+  "content-linkedin.js",
   "content-app-presence.js",
   "content-llm-handoff.js",
   "icons/icon16.png",
@@ -57,6 +64,20 @@ function copyFile(src, dest) {
   fs.copyFileSync(src, dest);
 }
 
+function copyDir(src, dest) {
+  if (!fs.existsSync(src)) return;
+  ensureDir(dest);
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const entrySrc = path.join(src, entry.name);
+    const entryDest = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      copyDir(entrySrc, entryDest);
+    } else {
+      copyFile(entrySrc, entryDest);
+    }
+  }
+}
+
 // --- Clean & create dist ---
 
 fs.rmSync(DIST, { recursive: true, force: true });
@@ -71,6 +92,18 @@ for (const file of COPY_FILES) {
     continue;
   }
   copyFile(src, path.join(DIST, file));
+}
+
+copyDir(DESIGN_SYSTEM_SRC, path.join(DIST, "design-system"));
+
+for (const cssFile of ["foundations.css", "motion.css"]) {
+  const cssPath = path.join(DIST, cssFile);
+  if (!fs.existsSync(cssPath)) continue;
+  const css = fs.readFileSync(cssPath, "utf8");
+  fs.writeFileSync(
+    cssPath,
+    css.replaceAll("../design-system/", "./design-system/")
+  );
 }
 
 // --- Dev tagging: pin key so dev build has stable ID ---

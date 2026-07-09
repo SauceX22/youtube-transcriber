@@ -1,0 +1,14 @@
+:root {
+  --ds-font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --ds-font-mono: "Geist Mono", "SF Mono", "Menlo", monospace;
+  --ds-text-heading-size: 22px;
+  --ds-text-heading-line: 1.25;
+  --ds-text-panel-title-size: 15px;
+  --ds-text-panel-title-line: 1.35;
+  --ds-text-list-title-size: 16px;
+  --ds-text-body-size: 14px;
+  --ds-text-row-title-size: 13px;
+  --ds-text-caption-size: 12px;
+  --ds-text-label-size: 11px;
+  --ds-text-micro-size: 10px;
+}

@@ -17,13 +17,40 @@ function isYouTubeVideoPage(url) {
 }
 
 function getVideoTitle() {
-  const meta = document.querySelector('meta[name="title"]');
-  if (meta?.content?.trim()) return meta.content.trim();
-  const h1 = document.querySelector(
-    "h1.ytd-watch-metadata yt-formatted-string"
-  );
-  if (h1?.textContent) return h1.textContent.trim();
-  return document.title.replace(" - YouTube", "").trim();
+  const candidates = [
+    document.querySelector("ytd-watch-metadata h1 yt-formatted-string")?.textContent,
+    document.querySelector("h1.ytd-watch-metadata yt-formatted-string")?.textContent,
+    document.querySelector("h1 yt-formatted-string")?.textContent,
+    document.querySelector("meta[property='og:title']")?.getAttribute("content"),
+    document.querySelector('meta[name="title"]')?.getAttribute("content"),
+    document.title.replace(/\s+-\s+YouTube$/i, ""),
+  ];
+  const normalizedVideoId = extractVideoId(window.location.href);
+  const canonicalHref = document
+    .querySelector("link[rel='canonical']")
+    ?.getAttribute("href");
+  const canonicalVideoId = canonicalHref ? extractVideoId(canonicalHref) : null;
+
+  for (const candidate of candidates) {
+    const title = String(candidate || "").replace(/\s+/g, " ").trim();
+    if (!title) continue;
+    // YouTube can keep meta/link tags from the previous watch page around
+    // during SPA navigation. If canonical still points at another video, only
+    // trust the visible watch-page headline and tab title until hydration lands.
+    if (
+      canonicalVideoId &&
+      normalizedVideoId &&
+      canonicalVideoId !== normalizedVideoId &&
+      candidate !== candidates[0] &&
+      candidate !== candidates[1] &&
+      candidate !== candidates[2] &&
+      candidate !== candidates[candidates.length - 1]
+    ) {
+      continue;
+    }
+    return title;
+  }
+  return "";
 }
 
 function getChannelInfo() {
@@ -291,6 +318,25 @@ function isTranscriptPanelExpanded() {
   return false;
 }
 
+function isTranscriptPanelDrawerExpanded() {
+  const allPanels = document.querySelectorAll(
+    "ytd-engagement-panel-section-list-renderer"
+  );
+  for (const panel of allPanels) {
+    const vis = panel.getAttribute("visibility") || "";
+    const targetId = panel.getAttribute("target-id") || "";
+    if (
+      vis.includes("EXPANDED") &&
+      (targetId.includes("transcript") ||
+        panel.textContent.includes("Transcript") ||
+        panel.querySelector(SEGMENT_TAG_SELECTOR))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 async function waitForTranscriptSegments(timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -397,7 +443,7 @@ async function openTranscriptPanel() {
     debugCaptionLog("clicking direct 'Show transcript' button");
     direct.click();
     await sleep(500);
-    if (isTranscriptPanelExpanded()) return true;
+    if (isTranscriptPanelDrawerExpanded()) return true;
   }
 
   // Strategy 2: More-actions menu → Show transcript item.
@@ -418,13 +464,19 @@ async function openTranscriptPanel() {
   debugCaptionLog("clicking Show transcript menu item");
   item.click();
   await sleep(500);
-  return isTranscriptPanelExpanded();
+  return isTranscriptPanelDrawerExpanded();
 }
 
 function findExpandedTranscriptPanel() {
   for (const panel of document.querySelectorAll("ytd-engagement-panel-section-list-renderer")) {
     const vis = panel.getAttribute("visibility") || "";
-    if (vis.includes("EXPANDED") && panel.querySelector(SEGMENT_TAG_SELECTOR)) {
+    const targetId = panel.getAttribute("target-id") || "";
+    if (
+      vis.includes("EXPANDED") &&
+      (panel.querySelector(SEGMENT_TAG_SELECTOR) ||
+        targetId.includes("transcript") ||
+        panel.textContent.includes("Transcript"))
+    ) {
       return panel;
     }
   }
@@ -564,6 +616,7 @@ async function tryExtractTranscriptFromPanel(expectedVideoId = null) {
   // before segments finished loading), yanking it invisible mid-use would
   // be jarring. wasInitiallyExpanded handles that case.
   const hideStyle = wasInitiallyExpanded ? null : injectScrapeHideStyle();
+  let openedByTranscriber = false;
 
   try {
     const opened = await openTranscriptPanel();
@@ -571,6 +624,7 @@ async function tryExtractTranscriptFromPanel(expectedVideoId = null) {
       debugCaptionLog("transcript scrape: panel could not be opened");
       return [];
     }
+    openedByTranscriber = !wasInitiallyExpanded;
     // Panel mounted but rows can take a moment to render — bumped from 2.5s
     // to 5s after observing real captioned videos miss the previous deadline.
     const segments = await waitForTranscriptSegments(5000);
@@ -589,12 +643,17 @@ async function tryExtractTranscriptFromPanel(expectedVideoId = null) {
     // Restore the user's prior UI state. If they didn't have the transcript
     // panel open before we touched it, close it so they aren't left with
     // two transcripts side-by-side (YT's panel + our extension panel).
-    if (segments.length && !wasInitiallyExpanded) {
+    if (openedByTranscriber) {
       const closed = closeTranscriptPanel();
       debugCaptionLog("transcript panel auto-closed", { closed });
+      if (closed) openedByTranscriber = false;
     }
     return segments;
   } finally {
+    if (openedByTranscriber && findTranscriptPanel()) {
+      const closed = closeTranscriptPanel();
+      debugCaptionLog("transcript panel cleanup close", { closed });
+    }
     if (hideStyle) removeScrapeHideStyle();
   }
 }
@@ -606,6 +665,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // listener is the only one for this message type.
   if (msg?.type === "PING_TRANSCRIBER") {
     sendResponse({ ok: true });
+    return false;
+  }
+  if (msg?.type === "GET_PAGE_INFO") {
+    const videoId = extractVideoId(window.location.href);
+    const channel = getChannelInfo();
+    sendResponse({
+      ok: true,
+      url: window.location.href,
+      pageUrl: window.location.href,
+      title: getVideoTitle(),
+      author: channel.author,
+      channelUrl: channel.channelUrl,
+      videoId,
+      isLive: videoId ? isLiveStream() : false,
+    });
     return false;
   }
   if (msg?.type !== "EXTRACT_CAPTIONS") return undefined;

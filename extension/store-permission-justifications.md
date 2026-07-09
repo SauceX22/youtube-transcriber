@@ -43,6 +43,12 @@ Paste these into the corresponding fields in the Chrome Web Store developer cons
 ### `*://open.spotify.com/*`
 > Same as YouTube but for Spotify podcast episodes. Detects episode navigation so the side panel can transcribe the current episode.
 
+### `*://x.com/*`, `*://twitter.com/*`, `*://mobile.twitter.com/*`
+> Same role as the YouTube/Spotify content scripts for X/Twitter video posts. Detects whether the current post or visible feed item contains playable video so the side panel can transcribe the user-selected post. Read-only metadata extraction: post URL, title text, author, and video marker.
+
+### `*://linkedin.com/*`, `*://www.linkedin.com/*`
+> Same role as the YouTube/Spotify content scripts for LinkedIn video posts. Detects playable video only on single/highlighted post pages and captures the media URL needed for transcription. Read-only metadata extraction: post URL, title text, author, and media URL for the user-selected post.
+
 ## Optional permissions (requested at runtime, only when the user enables the feature)
 
 ### `notifications`
@@ -85,7 +91,7 @@ These match the categories the extension transmits to transcribed.dev in cloud m
 | Authentication information | **Yes** | Cloud mode: a Supabase session cookie issued by transcribed.dev keeps the user signed in, plus any `ytt_sk_…` API keys the user generates in the dashboard for programmatic use. Not collected in local mode. |
 | Personal communications | No | |
 | Location | **Yes** | IP address is logged on the cloud server (transcribed.dev) for per-IP rate limiting (15 transcripts per IP per day) and abuse prevention. Not used for advertising, profiling, or precise geolocation. Not collected in local mode. |
-| Web history | **Yes** | The URL of the specific YouTube or podcast page the user chooses to transcribe is sent to the server (cloud mode) or local service (local mode) so the source audio can be fetched. Sent only when the user triggers a transcription — never general browsing history. |
+| Web history | **Yes** | The URL of the specific YouTube, Spotify podcast, X/Twitter video, or LinkedIn video post the user chooses to transcribe is sent to the server (cloud mode) or local service (local mode) so the source audio can be fetched. Sent only when the user triggers a transcription — never general browsing history. |
 | User activity | No | No analytics, telemetry, click tracking, scroll tracking, keystroke logging, or session recording inside the extension. |
 | Website content | **Yes** | The transcript text produced from the audio of the video or podcast the user chose. In cloud mode, stored in the user's transcribed.dev account so it's accessible from any device. In local mode, stored on the user's machine only. |
 

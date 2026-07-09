@@ -24,7 +24,12 @@
     "https://www.transcribed.dev/*",
     "*://*.youtube.com/*",
     "*://open.spotify.com/*",
-    "*://*.substack.com/*"
+    "*://*.substack.com/*",
+    "*://x.com/*",
+    "*://twitter.com/*",
+    "*://mobile.twitter.com/*",
+    "*://linkedin.com/*",
+    "*://www.linkedin.com/*"
   ],
   "optional_host_permissions": [
     "*://*.vimeo.com/*",

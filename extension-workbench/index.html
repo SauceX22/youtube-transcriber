@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Transcriber Extension Workbench</title>
+  <link rel="stylesheet" href="../extension/popup.css">
+  <link rel="stylesheet" href="./workbench.css">
+</head>
+<body>
+  <main class="workbench-shell">
+    <header class="workbench-header">
+      <div>
+        <p class="workbench-kicker">Extension workbench</p>
+        <h1>Transcriber side panel states</h1>
+      </div>
+    </header>
+
+    <section class="workbench-note">
+      <p>
+        This is the interim source of truth before Storybook. It currently uses
+        the real extension CSS with fixture markup; the next pass should render
+        states from the same DOM builders as <code>extension/popup.js</code>.
+        Motion comes from <code>extension/motion.css</code>.
+      </p>
+    </section>
+
+    <section class="workbench-variant" aria-labelledby="variant-native">
+      <div class="workbench-variant-head">
+        <div>
+          <p class="workbench-kicker">Variant A</p>
+          <h2 id="variant-native">Native summary extension</h2>
+        </div>
+        <p>Paid/current direction: summary renders inside the side panel.</p>
+      </div>
+      <div class="workbench-cohort-head">
+        <h3>First-time user</h3>
+        <p>Empty/light account: no library density yet, current video is the main decision.</p>
+      </div>
+      <div class="workbench-grid" aria-label="Native summary extension first-time user states">
+        <article class="workbench-frame" data-state="native-first-ready">
+          <div class="workbench-frame-head">
+            <h2>Ready</h2>
+            <span>first video</span>
+          </div>
+          <div class="popup">
+            <div class="state">
+              <h1 class="panel-title">How small teams turn YouTube research into useful notes</h1>
+              <button class="btn-transcribe">
+                <span class="btn-transcribe-label">Transcribe &amp; Summarize</span>
+              </button>
+            </div>
+            <div class="panel-footer">
+              <div class="footer-nav">
+                <button class="footer-nav-btn active" title="Library"><span data-icon="library"></span></button>
+                <button class="footer-nav-btn" title="Settings"><span data-icon="settings"></span></button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="workbench-frame" data-state="native-first-transcribing">
+          <div class="workbench-frame-head">
+            <h2>Transcribing</h2>
+            <span>after click</span>
+          </div>
+          <div class="popup">
+            <div class="state">
+              <h1 class="panel-title">How small teams turn YouTube research into useful notes</h1>
+              <div class="queue-card">
+                <div class="queue-card-row">
+                  <span class="status-dot processing"></span>
+                  <div class="queue-card-content">
+                    <div class="queue-card-title">How small teams turn YouTube research into useful notes</div>
+                    <div class="queue-card-status" data-progress-label>Sending to transcriber...</div>
+                  </div>
+                </div>
+                <div class="progress-track">
+                  <div class="progress-fill" data-progress-fill></div>
+                </div>
+              </div>
+              <button class="btn-cancel">Cancel</button>
+            </div>
+            <div class="panel-footer">
+              <div class="footer-nav">
+                <button class="footer-nav-btn active" title="Library"><span data-icon="library"></span></button>
+                <button class="footer-nav-btn" title="Settings"><span data-icon="settings"></span></button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="workbench-frame" data-state="native-first-empty">
+          <div class="workbench-frame-head">
+            <h2>Recent</h2>
+            <span>first video + empty library</span>
+          </div>
+          <div class="popup">
+            <div class="state">
+              <h1 class="panel-title">How small teams turn YouTube research into useful notes</h1>
+              <button class="btn-transcribe">
+                <span class="btn-transcribe-label">Transcribe &amp; Summarize</span>
+              </button>
+            </div>
+            <div class="recent-section">
+              <div class="section-label">Recent</div>
+              <div class="recent-list">
+                <p class="workbench-empty-copy">Your transcripts and summaries will appear here after your first run.</p>
+              </div>
+            </div>
+            <div class="panel-footer">
+              <div class="footer-nav">
+                <button class="footer-nav-btn active" title="Library"><span data-icon="library"></span></button>
+                <button class="footer-nav-btn" title="Settings"><span data-icon="settings"></span></button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="workbench-frame" data-state="native-first-summary-writing">
+          <div class="workbench-frame-head">
+            <h2>Writing Summary</h2>
+            <span>native summary chain</span>
+          </div>
+          <div class="popup">
+            <div class="state">
+              <h1 class="panel-title">How small teams turn YouTube research into useful notes</h1>
+              <div class="queue-card">
+                <div class="queue-card-row">
+                  <span class="status-dot processing"></span>
+                  <div class="queue-card-content">
+                    <div class="queue-card-title">How small teams turn YouTube research into useful notes</div>
+                    <div class="queue-card-status">Writing summary...</div>
+                  </div>
+                </div>
+                <div class="progress-track">
+                  <div class="progress-fill indeterminate"></div>
+                </div>
+              </div>
+              <button class="btn-cancel">Cancel</button>
+            </div>
+            <div class="panel-footer">
+              <div class="footer-nav">
+                <button class="footer-nav-btn active" title="Library"><span data-icon="library"></span></button>
+                <button class="footer-nav-btn" title="Settings"><span data-icon="settings"></span></button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="workbench-frame" data-state="native-first-error">
+          <div class="workbench-frame-head">
+            <h2>Error</h2>
+            <span>retry state</span>
+          </div>
+          <div class="popup">
+            <div class="state">
+              <p class="error-message">Transcription failed. Check the source video and try again.</p>
+              <button class="btn-retry">Retry</button>
+            </div>
+            <div class="panel-footer">
+              <div class="footer-nav">
+                <button class="footer-nav-btn active" title="Library"><span data-icon="library"></span></button>
+                <button class="footer-nav-btn" title="Settings"><span data-icon="settings"></span></button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="workbench-frame" data-state="native-first-settings">
+          <div class="workbench-frame-head">
+            <h2>Settings</h2>
+            <span>defaults</span>
+          </div>
+          <div class="popup">
+            <div class="settings-panel">
+              <div class="section-label">Settings</div>
+              <div class="settings-action">
+                <div class="section-label section-label-subsection">Button action</div>
+                <label class="settings-radio">
+                  <input type="radio" name="transcribeModeNativeFirst" value="transcribe">
+                  <span class="settings-radio-dot"></span>
+                  <span class="settings-radio-text">
+                    <span class="settings-radio-title">Transcribe</span>
+                    <span class="settings-radio-desc">Get the transcript only</span>
+                  </span>
+                </label>
+                <label class="settings-radio">
+                  <input type="radio" name="transcribeModeNativeFirst" value="transcribe-and-summarize" checked>
+                  <span class="settings-radio-dot"></span>
+                  <span class="settings-radio-text">
+                    <span class="settings-radio-title">Transcribe &amp; Summarize</span>
+                    <span class="settings-radio-desc">Transcribe then create a summary</span>
+                  </span>
+                </label>
+                <label class="settings-check-row settings-summary-destination">
+                  <span class="settings-check-copy">
+                    <span class="settings-label">Show summary in Transcriber</span>
+                    <span class="settings-check-help">Default destination for built-in summaries.</span>
+                  </span>
+                  <input type="checkbox" checked>
+                </label>
+              </div>
+            </div>
+            <div class="panel-footer">
+              <div class="footer-nav">
+                <button class="footer-nav-btn" title="Library"><span data-icon="library"></span></button>
+                <button class="footer-nav-btn active" title="Settings"><span data-icon="settings"></span></button>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <div class="workbench-cohort-head">
+        <h3>Mature library user</h3>
+        <p>Heavy account: long titles, prior transcripts, processing rows, menus, and configured settings.</p>
+      </div>
+      <div class="workbench-grid" aria-label="Native summary extension states">
+      <article class="workbench-frame" data-state="ready">
+        <div class="workbench-frame-head">
+          <h2>Ready</h2>
+          <span>current video</span>
+        </div>
+        <div class="popup">
+          <div class="state" id="stateReady">
+            <h1 class="panel-title">How small teams turn YouTube research into useful notes</h1>
+            <button class="btn-transcribe">
+              <span class="btn-transcribe-label">Transcribe &amp; Summarize</span>
+            </button>
+            <a class="already-transcribed" href="#">
+              <span class="already-transcribed-text">Already transcribed</span>
+              <svg class="already-transcribed-arrow" width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4l6 6-6 6"/></svg>
+            </a>
+          </div>
+          <div class="panel-footer">
+            <div class="footer-nav">
+              <button class="footer-nav-btn active" title="Library"><span data-icon="library"></span></button>
+              <button class="footer-nav-btn" title="Settings"><span data-icon="settings"></span></button>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="workbench-frame" data-state="recent-many">
+        <div class="workbench-frame-head">
+          <h2>Recent List</h2>
+          <span>many rows</span>
+        </div>
+        <div class="popup">
+          <div class="recent-section">
+            <div class="section-label">Recent</div>
+            <div class="recent-list">
+              <div class="recent-item-wrap expanded">
+                <a class="recent-item recent-item-new" href="#">
+                  <div class="recent-item-content">
+                    <span class="recent-tick">&#10003;</span>
+                    <div class="recent-text">
+                      <span class="recent-title">The practical future of recorded knowledge inside teams</span>
+                      <span class="recent-meta">Founders at Work · Today</span>
+                    </div>
+                  </div>
+                  <div class="recent-summarize">
+                    <button class="recent-summarize-btn" title="Show summary in Transcriber" aria-label="Show summary in Transcriber"><span data-icon="nativeSummary"></span></button>
+                  </div>
+                  <div class="row-actions">
+                    <button class="row-actions-btn" title="More" aria-label="More actions"><span data-icon="more"></span></button>
+                  </div>
+                  <svg class="recent-arrow" width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4l6 6-6 6"/></svg>
+                </a>
+                <div class="recent-transcript">
+                  <div class="recent-transcript-inner">
+                    <div class="native-summary-card">
+                      <div class="native-summary-kicker">Summary</div>
+                      <div class="native-summary-body">
+                        <h4>Key Takeaways</h4>
+                        <ul>
+                          <li>Teams need reusable decisions, not raw transcripts.</li>
+                          <li>The extension is strongest when it stays quiet and close to the video.</li>
+                          <li>Native summaries should feel like a first-class artifact.</li>
+                        </ul>
+                      </div>
+                    </div>
+                    <div class="transcript-line">
+                      <span class="transcript-time">03:18</span>
+                      <span class="transcript-text">The point is not to collect more content. The point is to make the useful parts show up when the work needs them.</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="recent-item-wrap">
+                <a class="recent-item" href="#">
+                  <div class="recent-item-content">
+                    <div class="recent-text">
+                      <span class="recent-title">A very long tutorial title that should truncate cleanly without pushing row actions out of the panel</span>
+                      <span class="recent-meta">Design Systems Weekly · Yesterday</span>
+                    </div>
+                  </div>
+                  <div class="recent-summarize">
+                    <button class="recent-summarize-btn" title="Show summary in Transcriber" aria-label="Show summary in Transcriber"><span data-icon="nativeSummary"></span></button>
+                  </div>
+                  <div class="row-actions">
+                    <button class="row-actions-btn" title="More" aria-label="More actions"><span data-icon="more"></span></button>
+                  </div>
+                </a>
+              </div>
+
+              <div class="recent-item-wrap">
+                <a class="recent-item recent-item-processing" href="#">
+                  <div class="recent-item-content">
+                    <span class="status-dot processing"></span>
+                    <div class="recent-text">
+                      <span class="recent-title">Processing a long podcast episode</span>
+                      <span class="recent-meta">Writing summary...</span>
+                    </div>
+                  </div>
+                  <button class="recent-clear-processing" title="Clear processing item" aria-label="Clear processing item">
+                    <span class="recent-clear-processing-label">Clear</span>
+                  </button>
+                </a>
+              </div>
+            </div>
+          </div>
+          <div class="panel-footer">
+            <div class="footer-nav">
+              <button class="footer-nav-btn active" title="Library"><span data-icon="library"></span></button>
+              <button class="footer-nav-btn" title="Settings"><span data-icon="settings"></span></button>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="workbench-frame" data-state="menus">
+        <div class="workbench-frame-head">
+          <h2>Menus</h2>
+          <span>click three dots</span>
+        </div>
+        <div class="popup workbench-menu-stage">
+          <div class="recent-section">
+            <div class="section-label">Recent</div>
+            <div class="recent-list">
+              <div class="recent-item-wrap">
+                <a class="recent-item" href="#">
+                  <div class="recent-item-content">
+                    <div class="recent-text">
+                      <span class="recent-title">How to Get Your First 10 Customers</span>
+                      <span class="recent-meta">Y Combinator · Jun 23</span>
+                    </div>
+                  </div>
+                  <div class="recent-summarize">
+                    <button class="recent-summarize-btn" title="Show summary in Transcriber" aria-label="Show summary in Transcriber"><span data-icon="nativeSummary"></span></button>
+                  </div>
+                  <div class="row-actions">
+                    <button class="row-actions-btn" title="More actions" aria-label="More actions"><span data-icon="more"></span></button>
+                  </div>
+                </a>
+              </div>
+              <div class="recent-item-wrap">
+                <a class="recent-item" href="#">
+                  <div class="recent-item-content">
+                    <div class="recent-text">
+                      <span class="recent-title">The Age Of The 40-Year Career Is Over</span>
+                      <span class="recent-meta">Y Combinator · Jun 23</span>
+                    </div>
+                  </div>
+                </a>
+              </div>
+              <div class="recent-item-wrap">
+                <a class="recent-item" href="#">
+                  <div class="recent-item-content">
+                    <div class="recent-text">
+                      <span class="recent-title">Japan Just Beat Claude at Robotics</span>
+                      <span class="recent-meta">Mehul Mohan · Jun 23</span>
+                    </div>
+                  </div>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="workbench-frame" data-state="settings">
+        <div class="workbench-frame-head">
+          <h2>Settings</h2>
+          <span>cloud summary default</span>
+        </div>
+        <div class="popup">
+          <div class="settings-panel">
+            <div class="section-label">Settings</div>
+            <div class="settings-action">
+              <div class="section-label section-label-subsection">Button action</div>
+              <label class="settings-radio">
+                <input type="radio" name="transcribeModeWorkbench" value="transcribe">
+                <span class="settings-radio-dot"></span>
+                <span class="settings-radio-text">
+                  <span class="settings-radio-title">Transcribe</span>
+                  <span class="settings-radio-desc">Get the transcript only</span>
+                </span>
+              </label>
+              <label class="settings-radio">
+                <input type="radio" name="transcribeModeWorkbench" value="transcribe-and-summarize" checked>
+                <span class="settings-radio-dot"></span>
+                <span class="settings-radio-text">
+                  <span class="settings-radio-title">Transcribe &amp; Summarize</span>
+                  <span class="settings-radio-desc">Transcribe then create a summary</span>
+                </span>
+              </label>
+              <label class="settings-check-row settings-summary-destination">
+                <span class="settings-check-copy">
+                  <span class="settings-label">Show summary in Transcriber</span>
+                  <span class="settings-check-help">Default destination for built-in summaries. Claude and ChatGPT stay available as external handoffs.</span>
+                </span>
+                <input type="checkbox" checked>
+              </label>
+              <div class="settings-action-provider">
+                <span class="settings-action-provider-label">Open transcript in</span>
+                <div class="provider-picker">
+                  <button type="button" class="provider-picker-trigger">
+                    <span class="provider-picker-icon" data-icon="claude"></span>
+                    <span class="provider-picker-name">Claude</span>
+                    <span class="provider-picker-chevron"></span>
+                  </button>
+                  <div class="provider-picker-menu" hidden>
+                    <button type="button" class="provider-picker-option" data-provider="claude">
+                      <span data-icon="claude"></span>
+                      <span class="provider-picker-option-name">Claude</span>
+                    </button>
+                    <button type="button" class="provider-picker-option" data-provider="chatgpt">
+                      <span data-icon="chatgpt"></span>
+                      <span class="provider-picker-option-name">ChatGPT</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="settings-destinations">
+              <div class="section-label section-label-subsection">Connectors</div>
+              <a class="settings-help-link destinations-help-link" href="https://www.transcribed.dev/docs/destinations" target="_blank" rel="noopener noreferrer">
+                Notion &amp; Obsidian setup guide
+              </a>
+              <div class="destinations-list">
+                <div class="destinations-row">
+                  <span class="destinations-row-icon"><img src="../extension/icons/obsidian.svg" alt=""></span>
+                  <span class="destinations-row-text">
+                    <span class="destinations-row-name">Obsidian</span>
+                  </span>
+                  <button type="button" class="destinations-toggle is-on" role="switch" aria-checked="true">
+                    <span class="destinations-toggle-thumb"></span>
+                  </button>
+                </div>
+              </div>
+              <div class="obsidian-vault-row">
+                <label class="obsidian-vault-label">Obsidian vault name</label>
+                <input class="obsidian-vault-input" type="text" value="myRemote" autocomplete="off" spellcheck="false">
+              </div>
+              <details class="obsidian-advuri-row">
+                <summary class="obsidian-advuri-summary">More</summary>
+                <label class="obsidian-advuri-label">
+                  <input class="obsidian-advuri-input" type="checkbox">
+                  <span class="obsidian-advuri-text">Use Advanced URI plugin</span>
+                </label>
+                <p class="obsidian-advuri-sub">Enable only if you've installed the Advanced URI community plugin.</p>
+              </details>
+            </div>
+            <details class="settings-advanced" open>
+              <summary class="settings-advanced-summary">Advanced</summary>
+              <div class="settings-advanced-body">
+                <div class="settings-row">
+                  <span class="settings-label">Self-hosted mode</span>
+                  <div class="settings-toggle-group">
+                    <button class="settings-mode-btn active" data-mode="cloud">Cloud</button>
+                    <button class="settings-mode-btn" data-mode="local">Self-hosted</button>
+                  </div>
+                </div>
+                <div class="settings-server" hidden>
+                  <p class="settings-server-status">Server stopped</p>
+                  <button class="btn-transcribe" type="button" data-server-action="start">
+                    <span class="start-spinner" hidden></span>
+                    <span class="start-server-label">Start</span>
+                  </button>
+                  <button class="btn-transcribe" type="button" data-server-action="stop" hidden>
+                    <span class="start-spinner" hidden></span>
+                    <span class="stop-label">Stop</span>
+                  </button>
+                  <p class="settings-server-hint">Use this when running transcription locally on your machine.</p>
+                </div>
+              </div>
+            </details>
+          </div>
+          <div class="panel-footer">
+            <div class="footer-nav">
+              <button class="footer-nav-btn" title="Library"><span data-icon="library"></span></button>
+              <button class="footer-nav-btn active" title="Settings"><span data-icon="settings"></span></button>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="workbench-frame" data-state="settings-toggle-states">
+        <div class="workbench-frame-head">
+          <h2>Mode Toggle</h2>
+          <span>button states</span>
+        </div>
+        <div class="popup">
+          <div class="settings-panel" data-mode-toggle-demo>
+            <div class="section-label">Settings</div>
+            <div class="workbench-control-samples">
+              <div class="workbench-control-row">
+                <span class="settings-label">Default</span>
+                <div class="settings-toggle-group" aria-label="Self-hosted mode default">
+                  <button type="button" class="settings-mode-btn active" aria-pressed="true">Cloud</button>
+                  <button type="button" class="settings-mode-btn" aria-pressed="false">Self-hosted</button>
+                </div>
+              </div>
+              <div class="workbench-control-row">
+                <span class="settings-label">Selected</span>
+                <div class="settings-toggle-group" aria-label="Self-hosted mode selected">
+                  <button type="button" class="settings-mode-btn" aria-pressed="false">Cloud</button>
+                  <button type="button" class="settings-mode-btn active" aria-pressed="true">Self-hosted</button>
+                </div>
+              </div>
+              <div class="workbench-control-row">
+                <span class="settings-label">Hover</span>
+                <div class="settings-toggle-group" aria-label="Self-hosted mode hover preview">
+                  <button type="button" class="settings-mode-btn active" aria-pressed="true">Cloud</button>
+                  <button type="button" class="settings-mode-btn workbench-hover" aria-pressed="false">Self-hosted</button>
+                </div>
+              </div>
+              <div class="workbench-control-row">
+                <span class="settings-label">Keyboard focus</span>
+                <div class="settings-toggle-group" aria-label="Self-hosted mode focus preview">
+                  <button type="button" class="settings-mode-btn active workbench-focus" aria-pressed="true">Cloud</button>
+                  <button type="button" class="settings-mode-btn" aria-pressed="false">Self-hosted</button>
+                </div>
+              </div>
+              <p class="workbench-control-status" data-mode-status>Cloud selected</p>
+            </div>
+          </div>
+          <div class="panel-footer">
+            <div class="footer-nav">
+              <button class="footer-nav-btn" title="Library"><span data-icon="library"></span></button>
+              <button class="footer-nav-btn active" title="Settings"><span data-icon="settings"></span></button>
+            </div>
+          </div>
+        </div>
+      </article>
+      </div>
+    </section>
+
+    <section class="workbench-variant" aria-labelledby="variant-external">
+      <div class="workbench-variant-head">
+        <div>
+          <p class="workbench-kicker">Variant B</p>
+          <h2 id="variant-external">External handoff extension</h2>
+        </div>
+        <p>Previous/current non-native flow: no in-panel summary card; Claude and ChatGPT are handoff destinations.</p>
+      </div>
+
+      <div class="workbench-cohort-head">
+        <h3>First-time user</h3>
+        <p>Empty/light account: the summary destination is external and the library has not filled up yet.</p>
+      </div>
+      <div class="workbench-grid" aria-label="External handoff extension first-time user states">
+        <article class="workbench-frame" data-state="external-first-ready">
+          <div class="workbench-frame-head">
+            <h2>Ready</h2>
+            <span>first video</span>
+          </div>
+          <div class="popup">
+            <div class="state">
+              <h1 class="panel-title">How small teams turn YouTube research into useful notes</h1>
+              <button class="btn-transcribe">
+                <span class="btn-transcribe-label">Transcribe &amp; Summarize</span>
+              </button>
+            </div>
+            <div class="panel-footer">
+              <div class="footer-nav">
+                <button class="footer-nav-btn active" title="Library"><span data-icon="library"></span></button>
+                <button class="footer-nav-btn" title="Settings"><span data-icon="settings"></span></button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="workbench-frame" data-state="external-first-empty">
+          <div class="workbench-frame-head">
+            <h2>Recent</h2>
+            <span>first video + empty library</span>
+          </div>
+          <div class="popup">
+            <div class="state">
+              <h1 class="panel-title">How small teams turn YouTube research into useful notes</h1>
+              <button class="btn-transcribe">
+                <span class="btn-transcribe-label">Transcribe &amp; Summarize</span>
+              </button>
+            </div>
+            <div class="recent-section">
+              <div class="section-label">Recent</div>
+              <div class="recent-list">
+                <p class="workbench-empty-copy">Your transcripts will appear here. Summaries open in your selected AI app.</p>
+              </div>
+            </div>
+            <div class="panel-footer">
+              <div class="footer-nav">
+                <button class="footer-nav-btn active" title="Library"><span data-icon="library"></span></button>
+                <button class="footer-nav-btn" title="Settings"><span data-icon="settings"></span></button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="workbench-frame" data-state="external-first-settings">
+          <div class="workbench-frame-head">
+            <h2>Settings</h2>
+            <span>defaults</span>
+          </div>
+          <div class="popup">
+            <div class="settings-panel">
+              <div class="section-label">Settings</div>
+              <div class="settings-action">
+                <div class="section-label section-label-subsection">Button action</div>
+                <label class="settings-radio">
+                  <input type="radio" name="transcribeModeExternalFirst" value="transcribe">
+                  <span class="settings-radio-dot"></span>
+                  <span class="settings-radio-text">
+                    <span class="settings-radio-title">Transcribe</span>
+                    <span class="settings-radio-desc">Get the transcript only</span>
+                  </span>
+                </label>
+                <label class="settings-radio">
+                  <input type="radio" name="transcribeModeExternalFirst" value="transcribe-and-summarize" checked>
+                  <span class="settings-radio-dot"></span>
+                  <span class="settings-radio-text">
+                    <span class="settings-radio-title">Transcribe &amp; Summarize</span>
+                    <span class="settings-radio-desc">Transcribe, then open the transcript in your AI app</span>
+                  </span>
+                </label>
+              <div class="settings-action-provider">
+                <span class="settings-action-provider-label">Open transcript in</span>
+                <div class="provider-picker">
+                    <button type="button" class="provider-picker-trigger">
+                      <span class="provider-picker-icon" data-icon="claude"></span>
+                      <span class="provider-picker-name">Claude</span>
+                      <span class="provider-picker-chevron"></span>
+                    </button>
+                    <div class="provider-picker-menu" hidden>
+                      <button type="button" class="provider-picker-option" data-provider="claude">
+                        <span data-icon="claude"></span>
+                        <span class="provider-picker-option-name">Claude</span>
+                      </button>
+                      <button type="button" class="provider-picker-option" data-provider="chatgpt">
+                        <span data-icon="chatgpt"></span>
+                        <span class="provider-picker-option-name">ChatGPT</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="panel-footer">
+              <div class="footer-nav">
+                <button class="footer-nav-btn" title="Library"><span data-icon="library"></span></button>
+                <button class="footer-nav-btn active" title="Settings"><span data-icon="settings"></span></button>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <div class="workbench-cohort-head">
+        <h3>Mature library user</h3>
+        <p>Heavy account: prior transcripts, long rows, handoff menus, and configured provider defaults.</p>
+      </div>
+      <div class="workbench-grid" aria-label="External handoff extension states">
+        <article class="workbench-frame" data-state="ready-external">
+          <div class="workbench-frame-head">
+            <h2>Ready</h2>
+            <span>external summary flow</span>
+          </div>
+          <div class="popup">
+            <div class="state">
+              <h1 class="panel-title">How small teams turn YouTube research into useful notes</h1>
+              <button class="btn-transcribe">
+                <span class="btn-transcribe-label">Transcribe &amp; Summarize</span>
+              </button>
+              <a class="already-transcribed" href="#">
+                <span class="already-transcribed-text">Already transcribed</span>
+                <svg class="already-transcribed-arrow" width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4l6 6-6 6"/></svg>
+              </a>
+            </div>
+            <div class="panel-footer">
+              <div class="footer-nav">
+                <button class="footer-nav-btn active" title="Library"><span data-icon="library"></span></button>
+                <button class="footer-nav-btn" title="Settings"><span data-icon="settings"></span></button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="workbench-frame" data-state="recent-external">
+          <div class="workbench-frame-head">
+            <h2>Recent List</h2>
+            <span>no native summary card</span>
+          </div>
+          <div class="popup">
+            <div class="recent-section">
+              <div class="section-label">Recent</div>
+              <div class="recent-list">
+                <div class="recent-item-wrap expanded">
+                  <a class="recent-item recent-item-new" href="#">
+                    <div class="recent-item-content">
+                      <span class="recent-tick">&#10003;</span>
+                      <div class="recent-text">
+                        <span class="recent-title">The practical future of recorded knowledge inside teams</span>
+                        <span class="recent-meta">Founders at Work · Today</span>
+                      </div>
+                    </div>
+                    <div class="recent-summarize">
+                      <button class="recent-summarize-btn" title="Summarize with Claude or ChatGPT" aria-label="Summarize with Claude or ChatGPT"><span data-icon="llmSpark"></span></button>
+                    </div>
+                    <div class="row-actions">
+                      <button class="row-actions-btn" title="More" aria-label="More actions"><span data-icon="more"></span></button>
+                    </div>
+                    <svg class="recent-arrow" width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4l6 6-6 6"/></svg>
+                  </a>
+                  <div class="recent-transcript">
+                    <div class="recent-transcript-inner">
+                      <div class="transcript-line">
+                        <span class="transcript-time">03:18</span>
+                        <span class="transcript-text">The point is not to collect more content. The point is to make the useful parts show up when the work needs them.</span>
+                      </div>
+                      <div class="transcript-line">
+                        <span class="transcript-time">03:44</span>
+                        <span class="transcript-text">For the older flow, summary work leaves the panel and continues in the user's chosen AI surface.</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="recent-item-wrap">
+                  <a class="recent-item" href="#">
+                    <div class="recent-item-content">
+                      <div class="recent-text">
+                        <span class="recent-title">A very long tutorial title that should truncate cleanly without pushing row actions out of the panel</span>
+                        <span class="recent-meta">Design Systems Weekly · Yesterday</span>
+                      </div>
+                    </div>
+                    <div class="recent-summarize">
+                      <button class="recent-summarize-btn" title="Summarize with Claude or ChatGPT" aria-label="Summarize with Claude or ChatGPT"><span data-icon="llmSpark"></span></button>
+                    </div>
+                    <div class="row-actions">
+                      <button class="row-actions-btn" title="More" aria-label="More actions"><span data-icon="more"></span></button>
+                    </div>
+                  </a>
+                </div>
+              </div>
+            </div>
+            <div class="panel-footer">
+              <div class="footer-nav">
+                <button class="footer-nav-btn active" title="Library"><span data-icon="library"></span></button>
+                <button class="footer-nav-btn" title="Settings"><span data-icon="settings"></span></button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="workbench-frame" data-state="menus-external">
+          <div class="workbench-frame-head">
+            <h2>Handoff Menu</h2>
+            <span>Claude + ChatGPT</span>
+          </div>
+          <div class="popup workbench-menu-stage">
+            <div class="recent-section">
+              <div class="section-label">Recent</div>
+              <div class="recent-list">
+                <div class="recent-item-wrap">
+                  <a class="recent-item" href="#">
+                    <div class="recent-item-content">
+                      <div class="recent-text">
+                        <span class="recent-title">How to evaluate summaries before launch</span>
+                        <span class="recent-meta">Product Review · Today</span>
+                      </div>
+                    </div>
+                    <div class="recent-summarize open">
+                      <button class="recent-summarize-btn" title="Summarize with Claude or ChatGPT" aria-label="Summarize with Claude or ChatGPT"><span data-icon="llmSpark"></span></button>
+                    </div>
+                  </a>
+                </div>
+              </div>
+              <div class="recent-summarize-menu workbench-floating-menu">
+                <div class="recent-summarize-menu-label">Summarize with</div>
+                <button class="recent-summarize-menu-item">
+                  <span data-icon="claude"></span>
+                  <span class="recent-summarize-menu-name">Claude</span>
+                  <span class="recent-summarize-menu-hint">last used</span>
+                </button>
+                <button class="recent-summarize-menu-item">
+                  <span data-icon="chatgpt"></span>
+                  <span class="recent-summarize-menu-name">ChatGPT</span>
+                  <span class="recent-summarize-menu-tip"><span class="recent-summarize-menu-tip-key">⌘V</span> to paste transcript</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="workbench-frame" data-state="settings-external">
+          <div class="workbench-frame-head">
+            <h2>Settings</h2>
+            <span>external provider only</span>
+          </div>
+          <div class="popup">
+            <div class="settings-panel">
+              <div class="section-label">Settings</div>
+              <div class="settings-action">
+                <div class="section-label section-label-subsection">Button action</div>
+                <label class="settings-radio">
+                  <input type="radio" name="transcribeModeExternal" value="transcribe">
+                  <span class="settings-radio-dot"></span>
+                  <span class="settings-radio-text">
+                    <span class="settings-radio-title">Transcribe</span>
+                    <span class="settings-radio-desc">Get the transcript only</span>
+                  </span>
+                </label>
+                <label class="settings-radio">
+                  <input type="radio" name="transcribeModeExternal" value="transcribe-and-summarize" checked>
+                  <span class="settings-radio-dot"></span>
+                  <span class="settings-radio-text">
+                    <span class="settings-radio-title">Transcribe &amp; Summarize</span>
+                    <span class="settings-radio-desc">Transcribe, then open the transcript in your AI app</span>
+                  </span>
+                </label>
+                <div class="settings-action-provider">
+                  <span class="settings-action-provider-label">Open transcript in</span>
+                  <div class="provider-picker">
+                    <button type="button" class="provider-picker-trigger">
+                      <span class="provider-picker-icon" data-icon="claude"></span>
+                      <span class="provider-picker-name">Claude</span>
+                      <span class="provider-picker-chevron"></span>
+                    </button>
+                    <div class="provider-picker-menu" hidden>
+                      <button type="button" class="provider-picker-option" data-provider="claude">
+                        <span data-icon="claude"></span>
+                        <span class="provider-picker-option-name">Claude</span>
+                      </button>
+                      <button type="button" class="provider-picker-option" data-provider="chatgpt">
+                        <span data-icon="chatgpt"></span>
+                        <span class="provider-picker-option-name">ChatGPT</span>
+                      </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="settings-destinations">
+              <div class="section-label section-label-subsection">Connectors</div>
+              <a class="settings-help-link destinations-help-link" href="https://www.transcribed.dev/docs/destinations" target="_blank" rel="noopener noreferrer">
+                Notion &amp; Obsidian setup guide
+              </a>
+              <div class="destinations-list">
+                <div class="destinations-row">
+                  <span class="destinations-row-icon"><img src="../extension/icons/obsidian.svg" alt=""></span>
+                  <span class="destinations-row-text">
+                    <span class="destinations-row-name">Obsidian</span>
+                  </span>
+                  <button type="button" class="destinations-toggle is-on" role="switch" aria-checked="true">
+                    <span class="destinations-toggle-thumb"></span>
+                  </button>
+                </div>
+              </div>
+              <div class="obsidian-vault-row">
+                <label class="obsidian-vault-label">Obsidian vault name</label>
+                <input class="obsidian-vault-input" type="text" value="myRemote" autocomplete="off" spellcheck="false">
+              </div>
+              <details class="obsidian-advuri-row">
+                <summary class="obsidian-advuri-summary">More</summary>
+                <label class="obsidian-advuri-label">
+                  <input class="obsidian-advuri-input" type="checkbox">
+                  <span class="obsidian-advuri-text">Use Advanced URI plugin</span>
+                </label>
+                <p class="obsidian-advuri-sub">Enable only if you've installed the Advanced URI community plugin.</p>
+              </details>
+            </div>
+              <details class="settings-advanced" open>
+                <summary class="settings-advanced-summary">Advanced</summary>
+                <div class="settings-advanced-body">
+                  <div class="settings-row">
+                    <span class="settings-label">Self-hosted mode</span>
+                    <div class="settings-toggle-group">
+                      <button class="settings-mode-btn active" data-mode="cloud">Cloud</button>
+                      <button class="settings-mode-btn" data-mode="local">Self-hosted</button>
+                    </div>
+                  </div>
+                  <div class="settings-server" hidden>
+                    <p class="settings-server-status">Server stopped</p>
+                    <button class="btn-transcribe" type="button" data-server-action="start">
+                      <span class="start-spinner" hidden></span>
+                      <span class="start-server-label">Start</span>
+                    </button>
+                    <button class="btn-transcribe" type="button" data-server-action="stop" hidden>
+                      <span class="start-spinner" hidden></span>
+                      <span class="stop-label">Stop</span>
+                    </button>
+                    <p class="settings-server-hint">Use this when running transcription locally on your machine.</p>
+                  </div>
+                </div>
+              </details>
+            </div>
+            <div class="panel-footer">
+              <div class="footer-nav">
+                <button class="footer-nav-btn" title="Library"><span data-icon="library"></span></button>
+                <button class="footer-nav-btn active" title="Settings"><span data-icon="settings"></span></button>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+  <script src="../extension/ui-icons.js"></script>
+  <script src="./workbench.js"></script>
+</body>
+</html>

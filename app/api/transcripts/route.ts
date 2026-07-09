@@ -285,6 +285,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
 
+    if (
+      message.includes("does not include an audio track") ||
+      message.includes("nothing to transcribe")
+    ) {
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
+
     return NextResponse.json(
       { error: `Failed to fetch transcript: ${message}` },
       { status: 500 }

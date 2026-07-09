@@ -295,7 +295,13 @@ function pageInfoFromTab(tab, stored = {}) {
     linkedInStoredMatches ||
     twitterStoredMatches;
   const videoId =
-    isTwitter && (!isTwitterStatus || !storedMatchesTab)
+    linkedInStoredMatches
+      ? stored.videoId
+      : isStoredLinkedIn
+      ? null
+      : twitterStoredMatches
+      ? stored.videoId
+      : isTwitter && (!isTwitterStatus || !storedMatchesTab)
       ? null
       : tabVideoId || stored.videoId;
   const storedTitle = cleanPageTitleForUrl(stored.title, storedUrl || tabUrl);
@@ -320,6 +326,33 @@ async function requestLivePageInfo(tab) {
   } catch {
     return null;
   }
+}
+
+async function getFreshPageInfoForTab(tab) {
+  if (!tab?.id) return {};
+  let storedPageInfo = {};
+  try {
+    const stored = await chrome.storage.session.get(`tab_${tab.id}`);
+    storedPageInfo = stored[`tab_${tab.id}`] || {};
+  } catch { /* ignore */ }
+
+  const tabVideoId = extractVideoId(tab.url || "");
+  const shouldRefresh =
+    !!tabVideoId ||
+    (isSpotifyUrl(tab.url) &&
+      !cleanPageTitleForUrl(storedPageInfo.title, storedPageInfo.url || tab.url));
+
+  if (shouldRefresh) {
+    const livePageInfo = await requestLivePageInfo(tab);
+    if (
+      livePageInfo?.title &&
+      (!tabVideoId || livePageInfo.videoId === tabVideoId)
+    ) {
+      return livePageInfo;
+    }
+  }
+
+  return storedPageInfo;
 }
 
 // ---------------------------------------------------------------------------
@@ -404,17 +437,10 @@ const LLM_STORAGE_KEY = "llm-launcher-last-provider";
 const LLM_DEFAULT_PROMPT =
   'Summarize the following transcript from "{title}". Focus on the main topics, key insights, and any actionable takeaways.';
 
+const UI_ICONS = globalThis.TranscriberIcons || {};
 const LLM_ICONS = {
-  claude: `
-    <svg class="recent-summarize-icon" width="14" height="14" viewBox="0 0 100 100" fill="#D97757" aria-hidden="true">
-      <path d="m19.6 66.5 19.7-11 .3-1-.3-.5h-1l-3.3-.2-11.2-.3L14 53l-9.5-.5-2.4-.5L0 49l.2-1.5 2-1.3 2.9.2 6.3.5 9.5.6 6.9.4L38 49.1h1.6l.2-.7-.5-.4-.4-.4L29 41l-10.6-7-5.6-4.1-3-2-1.5-2-.6-4.2 2.7-3 3.7.3.9.2 3.7 2.9 8 6.1L37 36l1.5 1.2.6-.4.1-.3-.7-1.1L33 25l-6-10.4-2.7-4.3-.7-2.6c-.3-1-.4-2-.4-3l3-4.2L28 0l4.2.6L33.8 2l2.6 6 4.1 9.3L47 29.9l2 3.8 1 3.4.3 1h.7v-.5l.5-7.2 1-8.7 1-11.2.3-3.2 1.6-3.8 3-2L61 2.6l2 2.9-.3 1.8-1.1 7.7L59 27.1l-1.5 8.2h.9l1-1.1 4.1-5.4 6.9-8.6 3-3.5L77 13l2.3-1.8h4.3l3.1 4.7-1.4 4.9-4.4 5.6-3.7 4.7-5.3 7.1-3.2 5.7.3.4h.7l12-2.6 6.4-1.1 7.6-1.3 3.5 1.6.4 1.6-1.4 3.4-8.2 2-9.6 2-14.3 3.3-.2.1.2.3 6.4.6 2.8.2h6.8l12.6 1 3.3 2 1.9 2.7-.3 2-5.1 2.6-6.8-1.6-16-3.8-5.4-1.3h-.8v.4l4.6 4.5 8.3 7.5L89 80.1l.5 2.4-1.3 2-1.4-.2-9.2-7-3.6-3-8-6.8h-.5v.7l1.8 2.7 9.8 14.7.5 4.5-.7 1.4-2.6 1-2.7-.6-5.8-8-6-9-4.7-8.2-.5.4-2.9 30.2-1.3 1.5-3 1.2-2.5-2-1.4-3 1.4-6.2 1.6-8 1.3-6.4 1.2-7.9.7-2.6v-.2H49L43 72l-9 12.3-7.2 7.6-1.7.7-3-1.5.3-2.8L24 86l10-12.8 6-7.9 4-4.6-.1-.5h-.3L17.2 77.4l-4.7.6-2-2 .2-3 1-1 8-5.5Z"/>
-    </svg>
-  `,
-  chatgpt: `
-    <svg class="recent-summarize-icon" width="14" height="14" viewBox="0 0 320 320" fill="currentColor" aria-hidden="true">
-      <path d="m297.06 130.97c7.26-21.79 4.76-45.66-6.85-65.48-17.46-30.4-52.56-46.04-86.84-38.68-15.25-17.18-37.16-26.95-60.13-26.81-35.04-.08-66.13 22.48-76.91 55.82-22.51 4.61-41.94 18.7-53.31 38.67-17.59 30.32-13.58 68.54 9.92 94.54-7.26 21.79-4.76 45.66 6.85 65.48 17.46 30.4 52.56 46.04 86.84 38.68 15.24 17.18 37.16 26.95 60.13 26.8 35.06.09 66.16-22.49 76.94-55.86 22.51-4.61 41.94-18.7 53.31-38.67 17.57-30.32 13.55-68.51-9.94-94.51zm-120.28 168.11c-14.03.02-27.62-4.89-38.39-13.88.49-.26 1.34-.73 1.89-1.07l63.72-36.8c3.26-1.85 5.26-5.32 5.24-9.07v-89.83l26.93 15.55c.29.14.48.42.52.74v74.39c-.04 33.08-26.83 59.9-59.91 59.97zm-128.84-55.03c-7.03-12.14-9.56-26.37-7.15-40.18.47.28 1.3.79 1.89 1.13l63.72 36.8c3.23 1.89 7.23 1.89 10.47 0l77.79-44.92v31.1c.02.32-.13.63-.38.83l-64.41 37.19c-28.69 16.52-65.33 6.7-81.92-21.95zm-16.77-139.09c7-12.16 18.05-21.46 31.21-26.29 0 .55-.03 1.52-.03 2.2v73.61c-.02 3.74 1.98 7.21 5.23 9.06l77.79 44.91-26.93 15.55c-.27.18-.61.21-.91.08l-64.42-37.22c-28.63-16.58-38.45-53.21-21.95-81.89zm221.26 51.49-77.79-44.92 26.93-15.54c.27-.18.61-.21.91-.08l64.42 37.19c28.68 16.57 38.51 53.26 21.94 81.94-7.01 12.14-18.05 21.44-31.2 26.28v-75.81c.03-3.74-1.96-7.2-5.2-9.06zm26.8-40.34c-.47-.29-1.3-.79-1.89-1.13l-63.72-36.8c-3.23-1.89-7.23-1.89-10.47 0l-77.79 44.92v-31.1c-.02-.32.13-.63.38-.83l64.41-37.16c28.69-16.55 65.37-6.7 81.91 22 6.99 12.12 9.52 26.31 7.15 40.1zm-168.51 55.43-26.94-15.55c-.29-.14-.48-.42-.52-.74v-74.39c.02-33.12 26.89-59.96 60.01-59.94 14.01 0 27.57 4.92 38.34 13.88-.49.26-1.33.73-1.89 1.07l-63.72 36.8c-3.26 1.85-5.26 5.31-5.24 9.06l-.04 89.79zm14.63-31.54 34.65-20.01 34.65 20v40.01l-34.65 20-34.65-20z"/>
-    </svg>
-  `,
+  claude: UI_ICONS.claude || "",
+  chatgpt: UI_ICONS.chatgpt || "",
 };
 
 const LLM_HANDOFF_PARAM = "yttx";
@@ -472,15 +498,7 @@ function buildLlmLauncher(transcriptId, videoTitle) {
   btn.className = "recent-summarize-btn";
   btn.title = "Summarize with Claude or ChatGPT";
   btn.setAttribute("aria-label", "Summarize with Claude or ChatGPT");
-  btn.innerHTML = `
-    <svg width="14" height="14" viewBox="0 0 20 20" fill="none"
-         stroke="currentColor" stroke-width="1.75"
-         stroke-linecap="round" stroke-linejoin="round">
-      <path d="M10 2v2M10 16v2M2 10h2M16 10h2"/>
-      <path d="M4.93 4.93l1.41 1.41M13.66 13.66l1.41 1.41M4.93 15.07l1.41-1.41M13.66 6.34l1.41-1.41"/>
-      <circle cx="10" cy="10" r="2"/>
-    </svg>
-  `;
+  btn.innerHTML = UI_ICONS.llmSpark || "";
   btn.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -500,15 +518,7 @@ function buildNativeSummaryButton(wrap, transcriptId, videoTitle) {
   btn.className = "recent-summarize-btn";
   btn.title = "Show summary in Transcriber";
   btn.setAttribute("aria-label", "Show summary in Transcriber");
-  btn.innerHTML = `
-    <svg width="14" height="14" viewBox="0 0 20 20" fill="none"
-         stroke="currentColor" stroke-width="1.75"
-         stroke-linecap="round" stroke-linejoin="round">
-      <path d="M10 2v3M10 15v3M3 10h3M14 10h3"/>
-      <path d="m5.5 5.5 2 2M12.5 12.5l2 2M14.5 5.5l-2 2M7.5 12.5l-2 2"/>
-      <circle cx="10" cy="10" r="1.8"/>
-    </svg>
-  `;
+  btn.innerHTML = UI_ICONS.nativeSummary || "";
   btn.addEventListener("click", async (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1385,13 +1395,7 @@ function buildRowActionsMenu(transcriptId, videoTitle) {
   btn.className = "row-actions-btn";
   btn.title = "More actions";
   btn.setAttribute("aria-label", "More actions");
-  btn.innerHTML = `
-    <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-      <circle cx="4" cy="10" r="1.6"/>
-      <circle cx="10" cy="10" r="1.6"/>
-      <circle cx="16" cy="10" r="1.6"/>
-    </svg>
-  `;
+  btn.innerHTML = UI_ICONS.more || "";
   btn.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -2063,7 +2067,18 @@ function formatRecentMeta(item) {
 // Open transcript in app — reuse existing app tab
 // ---------------------------------------------------------------------------
 
-async function openTranscript(id) {
+async function openTranscript(id, options = {}) {
+  if (options.syncCurrentPage && pageInfo?.url && id === existingTranscriptId) {
+    await sendMsg({
+      type: "SYNC_TRANSCRIPT_METADATA",
+      id,
+      url: pageInfo.url,
+      pageUrl: pageInfo.pageUrl,
+      title: pageInfo.title,
+      author: pageInfo.author,
+      channelUrl: pageInfo.channelUrl,
+    }).catch(() => null);
+  }
   await sendMsg({ type: "OPEN_TRANSCRIPT", id });
 }
 
@@ -2627,6 +2642,7 @@ function extractVideoId(url) {
       const match = u.pathname.match(/^\/episode\/([a-zA-Z0-9]{22})/);
       if (match) return match[1];
     }
+
   } catch { /* ignore */ }
   return null;
 }
@@ -2756,17 +2772,7 @@ async function init() {
   const cachedAuthOk = mode === "cloud" && isAuthCacheFresh(authCache);
   const tab = tabResult?.[0];
   if (tab) {
-    let storedPageInfo = {};
-    try {
-      const stored = await chrome.storage.session.get(`tab_${tab.id}`);
-      storedPageInfo = stored[`tab_${tab.id}`] || {};
-    } catch { /* ignore */ }
-    if (isSpotifyUrl(tab.url) && !cleanPageTitleForUrl(storedPageInfo.title, storedPageInfo.url || tab.url)) {
-      const livePageInfo = await requestLivePageInfo(tab);
-      if (livePageInfo?.title) {
-        storedPageInfo = livePageInfo;
-      }
-    }
+    const storedPageInfo = await getFreshPageInfoForTab(tab);
     pageInfo = pageInfoFromTab(tab, storedPageInfo);
     currentTabUrl = tab.url;
     currentTabId = tab.id;
@@ -3103,6 +3109,8 @@ async function doTranscribe() {
     title: pageInfo.title,
     author: pageInfo.author,
     channelUrl: pageInfo.channelUrl,
+    videoId: pageInfo.videoId,
+    pageUrl: pageInfo.pageUrl,
   });
   console.log("[ytt-popup] TRANSCRIBE response", res);
 
@@ -3315,7 +3323,7 @@ el.btnCopySetup.addEventListener("click", () => {
 el.btnAlreadyTranscribed.addEventListener("click", (e) => {
   e.preventDefault();
   if (existingTranscriptId) {
-    openTranscript(existingTranscriptId);
+    openTranscript(existingTranscriptId, { syncCurrentPage: true });
   }
 });
 
@@ -3338,6 +3346,8 @@ el.btnQueue.addEventListener("click", async () => {
     title: pageInfo.title,
     author: pageInfo.author,
     channelUrl: pageInfo.channelUrl,
+    videoId: pageInfo.videoId,
+    pageUrl: pageInfo.pageUrl,
   });
   el.queuePrompt.hidden = true;
   renderQueueList();
@@ -3359,11 +3369,7 @@ chrome.tabs.onActivated?.addListener(async () => {
       // During active transcription, only update page info for queue prompt —
       // don't re-init which would clobber the progress animation
       if (isTranscribing) {
-        let storedPageInfo = {};
-        try {
-          const stored = await chrome.storage.session.get(`tab_${tab.id}`);
-          storedPageInfo = stored[`tab_${tab.id}`] || {};
-        } catch { /* ignore */ }
+        const storedPageInfo = await getFreshPageInfoForTab(tab);
         pageInfo = pageInfoFromTab(tab, storedPageInfo);
         showQueuePrompt();
       } else {
@@ -3392,11 +3398,7 @@ chrome.tabs.onUpdated?.addListener(async (tabId, changeInfo) => {
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tab?.url) {
-        let storedPageInfo = {};
-        try {
-          const stored = await chrome.storage.session.get(`tab_${tab.id}`);
-          storedPageInfo = stored[`tab_${tab.id}`] || {};
-        } catch { /* ignore */ }
+        const storedPageInfo = await getFreshPageInfoForTab(tab);
         pageInfo = pageInfoFromTab(tab, storedPageInfo);
         showQueuePrompt();
       }
@@ -3418,7 +3420,16 @@ chrome.storage.onChanged.addListener((changes, area) => {
   const key = `tab_${currentTabId}`;
   if (!changes[key]) return;
   const next = changes[key].newValue;
-  if (!next?.url) return;
+  if (!next?.url) {
+    pageInfo = pageInfoFromTab({ url: currentTabUrl || "" }, {});
+    existingTranscriptId = null;
+    if (isTranscribing) {
+      showQueuePrompt();
+    } else {
+      showCurrentPageState();
+    }
+    return;
+  }
   if (isTranscribing) {
     pageInfo = pageInfoFromTab(next, next);
     currentTabUrl = next.url;
@@ -3428,6 +3439,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
     init();
   } else {
     pageInfo = pageInfoFromTab(next, next);
+    if (pageInfo?.videoId) {
+      showCurrentPageState();
+    }
   }
 });
 
@@ -3546,10 +3560,7 @@ function buildProviderPickerMenu() {
     item.dataset.provider = p.id;
     const isSelected = p.id === summarizeProvider;
     if (isSelected) item.classList.add("is-selected");
-    const check = isSelected
-      ? `<svg class="provider-picker-option-check" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 6.2 4.8 8.5 9.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`
-      : "";
-    item.innerHTML = `${p.icon}<span class="provider-picker-option-name">${escapeHtml(p.name)}</span>${check}`;
+    item.innerHTML = `${p.icon}<span class="provider-picker-option-name">${escapeHtml(p.name)}</span>`;
     item.addEventListener("click", (e) => {
       e.stopPropagation();
       saveSummarizeProvider(p.id);

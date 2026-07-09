@@ -1,17 +1,5 @@
-:root {
-  --bg: #0a0a0a;
-  --panel: #121212;
-  --panel-2: #161616;
-  --border: rgba(255, 255, 255, 0.10);
-  --border-hover: rgba(255, 255, 255, 0.30);
-  --text: #fafafa;
-  --muted: rgba(255, 255, 255, 0.70);
-  --muted-2: rgba(255, 255, 255, 0.55);
-  --muted-3: rgba(255, 255, 255, 0.35);
-  --error: #ef4444;
-  --accent: #a58959;
-  --success: #a58959;
-}
+@import url("./motion.css");
+@import url("./foundations.css");
 
 * {
   margin: 0;
@@ -30,8 +18,8 @@ body {
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  font-size: 14px;
+  font-family: var(--font-sans);
+  font-size: var(--text-body-size);
   -webkit-font-smoothing: antialiased;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
@@ -118,7 +106,7 @@ body::-webkit-scrollbar-thumb:hover {
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all var(--motion-hover-duration);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 .btn-transcribe:hover {
@@ -137,6 +125,7 @@ body::-webkit-scrollbar-thumb:hover {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  margin-top: 8px;
   text-decoration: none;
   cursor: pointer;
 }
@@ -150,7 +139,7 @@ body::-webkit-scrollbar-thumb:hover {
 .already-transcribed-arrow {
   color: var(--muted-3);
   opacity: 0;
-  transition: opacity 0.15s;
+  transition: opacity var(--motion-hover-duration);
 }
 .already-transcribed:hover .already-transcribed-arrow {
   opacity: 1;
@@ -600,6 +589,15 @@ body::-webkit-scrollbar-thumb:hover {
 .provider-picker-option:hover {
   background: rgba(255, 255, 255, 0.06);
 }
+.provider-picker-option.is-selected {
+  background: rgba(255, 255, 255, 0.08);
+}
+.provider-picker-option.is-selected::after {
+  content: "✓";
+  color: var(--accent, #fff);
+  font-size: 11px;
+  line-height: 1;
+}
 .provider-picker-option svg {
   width: 14px;
   height: 14px;
@@ -607,12 +605,6 @@ body::-webkit-scrollbar-thumb:hover {
 }
 .provider-picker-option-name {
   flex: 1;
-}
-.provider-picker-option svg.provider-picker-option-check {
-  width: 12px;
-  height: 12px;
-  margin-left: 4px;
-  color: var(--accent);
 }
 
 /* Settings → Server section (self-hosted + native host installed only). */
@@ -882,7 +874,7 @@ body::-webkit-scrollbar-thumb:hover {
     rgba(255, 255, 255, 0.04) 100%
   );
   background-size: 200% 100%;
-  animation: recent-skeleton-shimmer 1.4s ease-in-out infinite;
+  animation: recent-skeleton-shimmer var(--motion-skeleton-duration) ease-in-out infinite;
 }
 .recent-skeleton-title { width: 70%; }
 .recent-skeleton-meta { width: 45%; height: 8px; margin-top: 6px; }
@@ -904,15 +896,15 @@ body::-webkit-scrollbar-thumb:hover {
   grid-template-rows: 0fr;
   opacity: 0;
   transition:
-    grid-template-rows 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
-    opacity 0.22s ease-out;
+    grid-template-rows var(--motion-drawer-close-duration) var(--motion-drawer-close-ease),
+    opacity var(--motion-drawer-opacity-close-duration) ease-out;
 }
 .recent-item-wrap.expanded .recent-transcript {
   grid-template-rows: 1fr;
   opacity: 1;
   transition:
-    grid-template-rows 0.42s cubic-bezier(0.34, 1.56, 0.3, 1),
-    opacity 0.65s ease-out;
+    grid-template-rows var(--motion-drawer-open-duration) var(--motion-drawer-open-ease),
+    opacity var(--motion-drawer-opacity-open-duration) ease-out;
 }
 .recent-transcript-inner {
   min-height: 0;
@@ -1014,7 +1006,7 @@ body::-webkit-scrollbar-thumb:hover {
   border-radius: 50%;
   border: 2px solid rgba(255, 255, 255, 0.15);
   border-top-color: rgba(255, 255, 255, 0.55);
-  animation: transcript-spinner-rotate 0.8s linear infinite;
+  animation: transcript-spinner-rotate var(--motion-spinner-duration) linear infinite;
 }
 @keyframes transcript-spinner-rotate {
   to { transform: rotate(360deg); }
@@ -1026,7 +1018,7 @@ body::-webkit-scrollbar-thumb:hover {
   margin-left: 6px;
   flex-shrink: 0;
   opacity: 0.7;
-  transition: opacity 0.15s;
+  transition: opacity var(--motion-hover-duration);
 }
 .recent-item:hover .recent-summarize,
 .recent-summarize:focus-within {
@@ -1043,7 +1035,7 @@ body::-webkit-scrollbar-thumb:hover {
   background: transparent;
   color: rgba(255, 255, 255, 0.55);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, transform 0.3s;
+  transition: background var(--motion-hover-duration), color var(--motion-hover-duration), transform 0.3s;
 }
 .recent-summarize-btn:hover {
   background: rgba(255, 255, 255, 0.08);
@@ -1092,7 +1084,7 @@ body::-webkit-scrollbar-thumb:hover {
   font-size: 13px;
   text-align: left;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: background var(--motion-menu-duration), color var(--motion-menu-duration);
 }
 .recent-summarize-menu-item:hover {
   background: rgba(255, 255, 255, 0.05);
@@ -1165,9 +1157,9 @@ body::-webkit-scrollbar-thumb:hover {
   margin-left: 8px;
   color: rgba(255, 255, 255, 0.25);
   overflow: hidden;
-  animation: fadeArrowOut 1.4s ease-out forwards;
-  transition: width 0.4s cubic-bezier(0.25, 0.1, 0.25, 1),
-              margin-left 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
+  animation: fadeArrowOut var(--motion-complete-signal-duration) ease-out forwards;
+  transition: width var(--motion-complete-collapse-duration) var(--motion-complete-collapse-ease),
+              margin-left var(--motion-complete-collapse-duration) var(--motion-complete-collapse-ease);
 }
 @keyframes fadeArrowOut {
   0% { opacity: 1; }
@@ -1195,9 +1187,9 @@ body::-webkit-scrollbar-thumb:hover {
   color: rgba(255, 255, 255, 0.50);
   font-size: 10px;
   overflow: hidden;
-  animation: fadeTickOut 1.4s ease-out forwards;
-  transition: width 0.4s cubic-bezier(0.25, 0.1, 0.25, 1),
-              margin-right 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
+  animation: fadeTickOut var(--motion-complete-signal-duration) ease-out forwards;
+  transition: width var(--motion-complete-collapse-duration) var(--motion-complete-collapse-ease),
+              margin-right var(--motion-complete-collapse-duration) var(--motion-complete-collapse-ease);
 }
 @keyframes fadeTickOut {
   0%   { opacity: 1; transform: scale(1); }
@@ -1214,7 +1206,7 @@ body::-webkit-scrollbar-thumb:hover {
 
 .recent-item-new {
   background: rgba(255, 255, 255, 0.04);
-  animation: newItemFade 1.8s ease-in-out forwards;
+  animation: newItemFade var(--motion-new-row-duration) ease-in-out forwards;
 }
 @keyframes newItemFade {
   0% { background: rgba(255, 255, 255, 0.04); }
@@ -1290,10 +1282,14 @@ body::-webkit-scrollbar-thumb:hover {
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background var(--motion-hover-duration), border-color var(--motion-hover-duration), color var(--motion-hover-duration), box-shadow var(--motion-hover-duration);
 }
 .settings-mode-btn:hover {
   color: var(--muted);
+}
+.settings-mode-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.18);
 }
 .settings-mode-btn.active {
   background: rgba(255, 255, 255, 0.08);
@@ -2437,9 +2433,38 @@ body::-webkit-scrollbar-thumb:hover {
 }
 .settings-check-row input {
   flex-shrink: 0;
-  width: 18px;
-  height: 18px;
-  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s;
+}
+.settings-check-row input:hover {
+  border-color: rgba(255, 255, 255, 0.32);
+}
+.settings-check-row input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.settings-check-row input:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.settings-check-row input:checked::after {
+  content: "";
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) translate(-1px, -1px);
 }
 
 /* Self-hosted setup wall modal */

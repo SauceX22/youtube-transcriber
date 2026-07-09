@@ -1268,7 +1268,7 @@ function HomeInner() {
                           <motion.div
                             key={t.id}
                             data-transcript-id={t.id}
-                            layout
+                            layout="position"
                             transition={{
                               layout: {
                                 type: "spring",

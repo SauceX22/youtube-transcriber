@@ -88,6 +88,8 @@ Required host permissions (declared in the manifest):
 - **`https://transcribed.dev/*`, `https://www.transcribed.dev/*`** — communicate with the cloud transcription service in cloud mode, including the cloud OAuth proxy used for destination connections.
 - **`*://*.youtube.com/*`** — inject content scripts that detect video navigation on YouTube.
 - **`*://open.spotify.com/*`** — inject content scripts that detect podcast episode navigation on Spotify.
+- **`*://x.com/*`, `*://twitter.com/*`, `*://mobile.twitter.com/*`** — inject content scripts that detect whether the current X/Twitter post contains playable video and read only the post URL, title text, author, and video marker needed to transcribe the user-selected post.
+- **`*://linkedin.com/*`, `*://www.linkedin.com/*`** — inject content scripts that detect playable video on single/highlighted LinkedIn post pages and read only the post URL, title text, author, and captured media URL needed to transcribe the user-selected post.
 
 Optional host permissions (requested only when the relevant feature is used):
 
@@ -98,7 +100,7 @@ Optional host permissions (requested only when the relevant feature is used):
 
 - We don't sell or share your data with advertisers.
 - We don't use cross-site tracking cookies, pixels, or fingerprinting.
-- We don't read or transmit pages other than the supported video / podcast pages you transcribe.
+- We don't read or transmit pages other than the supported video, podcast, or social video post pages you transcribe.
 - We don't access your YouTube, Spotify, or other source-platform credentials.
 - We don't store destination access tokens inside the extension. Cloud-proxied destinations (e.g. Notion) keep tokens server-side on transcribed.dev; client-side destinations (e.g. Obsidian) require no tokens at all.
 - We don't include third-party analytics, telemetry, or A/B tooling inside the extension.

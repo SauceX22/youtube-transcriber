@@ -34,6 +34,10 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+.playwright-cli/
+output/
+test-results/
+tmp/
 
 /lib/generated/prisma
 

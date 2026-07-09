@@ -63,6 +63,25 @@ const CONTENT_SCRIPTS = [
     runAt: "document_idle",
   },
   {
+    id: "twitter-content",
+    matches: ["*://x.com/*", "*://twitter.com/*", "*://mobile.twitter.com/*"],
+    js: ["content-twitter.js"],
+    runAt: "document_idle",
+  },
+  {
+    id: "linkedin-media-capture",
+    matches: ["*://www.linkedin.com/*", "*://linkedin.com/*"],
+    js: ["content-linkedin-main.js"],
+    runAt: "document_start",
+    world: "MAIN",
+  },
+  {
+    id: "linkedin-content",
+    matches: ["*://www.linkedin.com/*", "*://linkedin.com/*"],
+    js: ["content-linkedin.js"],
+    runAt: "document_idle",
+  },
+  {
     id: "app-presence",
     matches: ["https://transcribed.dev/*", "https://www.transcribed.dev/*"],
     js: ["content-app-presence.js"],
@@ -202,6 +221,20 @@ function extractContentId(url) {
     if (host === "open.spotify.com") {
       const match = u.pathname.match(/^\/episode\/([a-zA-Z0-9]{22})/);
       if (match) return match[1];
+    }
+
+    // Twitter/X status URL
+    if (host === "x.com" || host === "twitter.com" || host === "mobile.twitter.com") {
+      const match = u.pathname.match(/^\/[^/]+\/status(?:es)?\/([0-9]+)/);
+      if (match) return `twitter:${match[1]}`;
+    }
+
+    if (host === "linkedin.com") {
+      const highlighted = u.searchParams.get("highlightedUpdateUrn");
+      const highlightedMatch = highlighted?.match(/urn:li:activity:([0-9]+)/);
+      if (highlightedMatch) return `linkedin:${highlightedMatch[1]}`;
+      const match = u.pathname.match(/(?:activity-|urn:li:activity:)([0-9]+)/);
+      if (match) return `linkedin:${match[1]}`;
     }
   } catch {
     // ignore
@@ -464,6 +497,11 @@ async function tryHealthCheck(baseUrl, headers, mode, credentials) {
 async function transcribeRequest(url, extras = {}, configOverride = null) {
   const config = configOverride || await getApiConfig();
   const body = { url };
+  if (extras.videoId) body.videoId = extras.videoId;
+  if (extras.pageUrl) body.pageUrl = extras.pageUrl;
+  if (extras.title) body.title = extras.title;
+  if (extras.author) body.author = extras.author;
+  if (extras.channelUrl) body.channelUrl = extras.channelUrl;
   if (extras?.segments?.length) {
     body.segments = extras.segments;
     if (extras.languageCode) body.languageCode = extras.languageCode;
@@ -472,9 +510,6 @@ async function transcribeRequest(url, extras = {}, configOverride = null) {
     }
     // The fast-path endpoint can't fetch metadata (Vercel is blocked from
     // YouTube), so the extension supplies title scraped from the page.
-    if (extras.title) body.title = extras.title;
-    if (extras.author) body.author = extras.author;
-    if (extras.channelUrl) body.channelUrl = extras.channelUrl;
   }
   let res = await fetch(`${config.baseUrl}/api/transcripts`, {
     method: "POST",
@@ -707,6 +742,7 @@ async function classifyError(status, data) {
   const config = await getApiConfig();
   if (config.mode === "local") {
     if (status === 401) return "Server rejected the request. Check your local setup.";
+    if (data?.error) return data.error;
     if (status >= 500) return "Local server error. Check the terminal for details.";
     return data?.error || `HTTP ${status}`;
   }
@@ -740,6 +776,26 @@ async function getTranscript(id) {
   });
   if (!res.ok) throw new Error(await classifyError(res.status, {}));
   return await res.json();
+}
+
+async function syncTranscriptMetadata(id, metadata) {
+  const config = await getApiConfig();
+  const body = {};
+  if (metadata.title) body.title = metadata.title;
+  if (metadata.author) body.author = metadata.author;
+  if (metadata.channelUrl) body.channelUrl = metadata.channelUrl;
+  if (metadata.videoUrl) body.videoUrl = metadata.videoUrl;
+  if (!Object.keys(body).length) return null;
+
+  const res = await fetch(`${config.baseUrl}/api/transcripts/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...config.headers },
+    credentials: config.credentials,
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(await classifyError(res.status, data));
+  return data;
 }
 
 async function deleteTranscript(id) {
@@ -1212,10 +1268,10 @@ async function claimHandoffPrompt(token) {
 // Core transcribe — runs in background, persists state
 // ---------------------------------------------------------------------------
 
-async function doTranscribe(url, title, author = "", channelUrl = "") {
+async function doTranscribe(url, title, author = "", channelUrl = "", videoId = "", pageUrl = "") {
   console.log("[ytt-bg] doTranscribe start", {
     url,
-    videoId: youtubeVideoId(url),
+    videoId: videoId || youtubeVideoId(url),
     title: title || "",
     author: author || "",
   });
@@ -1224,6 +1280,8 @@ async function doTranscribe(url, title, author = "", channelUrl = "") {
     title: title || "",
     author: author || "",
     channelUrl: channelUrl || "",
+    videoId: videoId || "",
+    pageUrl: pageUrl || "",
     status: "transcribing",
     result: null,
     error: null,
@@ -1241,8 +1299,8 @@ async function doTranscribe(url, title, author = "", channelUrl = "") {
     const captions = await tryExtractCaptions(url);
     const tCaptions = performance.now() - t0;
     const extras = captions
-      ? { ...captions, title: title || "", author: author || "", channelUrl: channelUrl || "" }
-      : {};
+      ? { ...captions, title: title || "", author: author || "", channelUrl: channelUrl || "", videoId: videoId || "", pageUrl: pageUrl || "" }
+      : { title: title || "", author: author || "", channelUrl: channelUrl || "", videoId: videoId || "", pageUrl: pageUrl || "" };
     const config = await getApiConfig();
     const tReq = performance.now();
     const data = await transcribeRequest(url, extras, config);
@@ -1251,7 +1309,7 @@ async function doTranscribe(url, title, author = "", channelUrl = "") {
     const benchmark = {
       ts: Date.now(),
       url,
-      videoId: youtubeVideoId(url),
+      videoId: videoId || youtubeVideoId(url),
       pathway: captions ? "captions-client" : "server",
       captionTracks: captions ? captions.segments?.length || 0 : 0,
       isAutoGenerated: captions?.isAutoGenerated ?? null,
@@ -1319,7 +1377,7 @@ async function processNextInQueue() {
   const next = queue.shift();
   await setQueue(queue);
 
-  doTranscribe(next.url, next.title, next.author, next.channelUrl).catch(() => {});
+  doTranscribe(next.url, next.title, next.author, next.channelUrl, next.videoId, next.pageUrl).catch(() => {});
   await waitForQueuedTranscriptionStart(next.url);
 
   return { processing: true, title: next.title, url: next.url };
@@ -1343,16 +1401,18 @@ async function waitForQueuedTranscriptionStart(url) {
 // ---------------------------------------------------------------------------
 
 const MAX_URL_LEN = 2048;
+const MAX_MEDIA_URL_LEN = 8192;
 const MAX_TITLE_LEN = 512;
 const ID_MAX_LEN = 128;
 const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+const CONTENT_ID_PATTERN = /^[A-Za-z0-9_:-]+$/;
 
 function isStr(v, maxLen) {
   return typeof v === "string" && v.length > 0 && v.length <= maxLen;
 }
 
-function validHttpUrl(u) {
-  if (!isStr(u, MAX_URL_LEN)) return false;
+function validHttpUrl(u, maxLen = MAX_URL_LEN) {
+  if (!isStr(u, maxLen)) return false;
   try {
     const parsed = new URL(u);
     return parsed.protocol === "http:" || parsed.protocol === "https:";
@@ -1368,6 +1428,15 @@ function clampTitle(t) {
 
 function validId(id) {
   return isStr(id, ID_MAX_LEN) && ID_PATTERN.test(id);
+}
+
+function validContentId(id) {
+  return isStr(id, ID_MAX_LEN) && CONTENT_ID_PATTERN.test(id);
+}
+
+function validTranscriptionUrl(url, videoId = "") {
+  const maxLen = String(videoId || "").startsWith("linkedin:") ? MAX_MEDIA_URL_LEN : MAX_URL_LEN;
+  return validHttpUrl(url, maxLen);
 }
 
 function validMode(m) {
@@ -1419,17 +1488,41 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return await openGoogleSignin();
 
       case "TRANSCRIBE": {
-        if (!validHttpUrl(message.url)) {
-          throw new Error("Invalid url");
-        }
+        const messageVideoId =
+          typeof message.videoId === "string" && validContentId(message.videoId)
+            ? message.videoId
+            : "";
+        if (!validTranscriptionUrl(message.url, messageVideoId)) throw new Error("Invalid url");
         return await doTranscribe(
           message.url,
           clampTitle(message.title),
           clampTitle(message.author),
           typeof message.channelUrl === "string" && validHttpUrl(message.channelUrl)
             ? message.channelUrl
+            : "",
+          messageVideoId,
+          typeof message.pageUrl === "string" && validHttpUrl(message.pageUrl)
+            ? message.pageUrl
             : ""
         );
+      }
+
+      case "SYNC_TRANSCRIPT_METADATA": {
+        if (!validId(message.id)) throw new Error("Invalid id");
+        return await syncTranscriptMetadata(message.id, {
+          title: clampTitle(message.title),
+          author: clampTitle(message.author),
+          channelUrl:
+            typeof message.channelUrl === "string" && validHttpUrl(message.channelUrl)
+              ? message.channelUrl
+              : "",
+          videoUrl:
+            typeof message.pageUrl === "string" && validHttpUrl(message.pageUrl)
+              ? message.pageUrl
+              : typeof message.url === "string" && validHttpUrl(message.url)
+                ? message.url
+                : "",
+        });
       }
 
       case "GET_TRANSCRIPTION_STATUS":
@@ -1462,14 +1555,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return await getPreferences();
 
       case "CHECK_EXISTING": {
-        if (!validId(message.videoId)) throw new Error("Invalid videoId");
+        if (!validContentId(message.videoId)) throw new Error("Invalid videoId");
         return await checkExisting(message.videoId);
       }
 
       case "QUEUE_ADD": {
-        if (!validHttpUrl(message.url)) {
-          throw new Error("Invalid url");
-        }
+        const messageVideoId =
+          typeof message.videoId === "string" && validContentId(message.videoId)
+            ? message.videoId
+            : "";
+        if (!validTranscriptionUrl(message.url, messageVideoId)) throw new Error("Invalid url");
         const queue = await getQueue();
         const already = queue.some((q) => q.url === message.url);
         if (!already) {
@@ -1480,6 +1575,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             channelUrl:
               typeof message.channelUrl === "string" && validHttpUrl(message.channelUrl)
                 ? message.channelUrl
+                : "",
+            videoId: messageVideoId,
+            pageUrl:
+              typeof message.pageUrl === "string" && validHttpUrl(message.pageUrl)
+                ? message.pageUrl
                 : "",
           });
           await setQueue(queue);
@@ -1526,12 +1626,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // every string before persisting. Silently drop malformed payloads
         // instead of erroring so a hostile page can't spam the console.
         if (!sender.tab?.id) return { ok: true };
-        if (!validHttpUrl(message.url)) return { ok: true };
         const vid = typeof message.videoId === "string" ? message.videoId : null;
-        if (vid !== null && !validId(vid)) return { ok: true };
+        if (vid !== null && !validContentId(vid)) return { ok: true };
+        if (!validTranscriptionUrl(message.url, vid || "")) return { ok: true };
         await chrome.storage.session.set({
           [`tab_${sender.tab.id}`]: {
             url: message.url,
+            pageUrl:
+              typeof message.pageUrl === "string" && validHttpUrl(message.pageUrl)
+                ? message.pageUrl
+                : "",
             title: clampTitle(message.title),
             author: clampTitle(message.author),
             channelUrl:
@@ -1539,9 +1643,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 ? message.channelUrl
                 : "",
             videoId: vid,
+            platform: typeof message.platform === "string" ? clampTitle(message.platform) : "",
             isLive: !!message.isLive,
           },
         });
+        return { ok: true };
+      }
+
+      case "CLEAR_PAGE_INFO": {
+        if (!sender.tab?.id) return { ok: true };
+        await chrome.storage.session.remove(`tab_${sender.tab.id}`);
         return { ok: true };
       }
 

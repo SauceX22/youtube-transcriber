@@ -6,6 +6,8 @@ Next.js 15 app — local YouTube transcription via Whisper + yt-dlp. Runs at `lo
 
 Before generating any UI, components, or CSS, read `docs/VISUAL-RULES.md`. Edge tokens replace 1px borders (`shadow-[var(--edge)]` not `border`); hover via translucent overlay, not color swap. Append corrections to that file with the "update so this never happens again" pattern when output looks cheap.
 
+For Chrome extension side-panel work, also read `docs/EXTENSION-DESIGN-CONTRACT.md` and the project-level governance note at `../design/DESIGN-GOVERNANCE.md`. The current extension visuals are not approved as canonical; preserve named primitives and classify changes before editing `extension/popup.html`, `extension/popup.css`, or side-panel rendering in `extension/popup.js`.
+
 ## Session continuity
 
 Before ending a session or when context usage exceeds ~75%, update these two files and alert user when doing this so they know we have reached 75%:
@@ -40,4 +42,3 @@ When a bug is reported or agent extraction fails:
 2. **Fix the bug** - Make the minimal change needed
 3. **Verify test passes** - Prove the fix works
 4. **Check for regressions**
-

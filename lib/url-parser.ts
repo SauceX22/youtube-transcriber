@@ -10,6 +10,25 @@ export interface ParsedUrl {
 
 const SPOTIFY_EPISODE_REGEX = /^[a-zA-Z0-9]{22}$/;
 
+function extractTwitterStatusId(parsed: URL): string | null {
+  const host = parsed.hostname.replace(/^www\./, "");
+  if (host !== "x.com" && host !== "twitter.com" && host !== "mobile.twitter.com") {
+    return null;
+  }
+  const match = parsed.pathname.match(/^\/[^/]+\/status(?:es)?\/([0-9]+)/);
+  return match ? match[1] : null;
+}
+
+function extractLinkedInActivityId(parsed: URL): string | null {
+  const host = parsed.hostname.replace(/^www\./, "");
+  if (host !== "linkedin.com") return null;
+  const highlighted = parsed.searchParams.get("highlightedUpdateUrn");
+  const highlightedMatch = highlighted?.match(/urn:li:activity:([0-9]+)/);
+  if (highlightedMatch) return highlightedMatch[1];
+  const match = parsed.pathname.match(/(?:activity-|urn:li:activity:)([0-9]+)/);
+  return match ? match[1] : null;
+}
+
 /**
  * Parse a content URL and detect the platform.
  * Supports YouTube and Spotify episode URLs.
@@ -47,6 +66,24 @@ export function parseContentUrl(url: string): ParsedUrl {
   ) {
     const videoId = extractVideoId(url);
     return { platform: "youtube", contentId: videoId, originalUrl: url };
+  }
+
+  const twitterStatusId = extractTwitterStatusId(parsed);
+  if (twitterStatusId) {
+    return {
+      platform: "generic",
+      contentId: `twitter:${twitterStatusId}`,
+      originalUrl: url,
+    };
+  }
+
+  const linkedInActivityId = extractLinkedInActivityId(parsed);
+  if (linkedInActivityId) {
+    return {
+      platform: "generic",
+      contentId: `linkedin:${linkedInActivityId}`,
+      originalUrl: url,
+    };
   }
 
   // Fall back to generic yt-dlp handler (Twitch, Vimeo, TikTok, Twitter/X,
