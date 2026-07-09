@@ -1,11 +1,5 @@
 function extractEpisodeId(url) {
-  try {
-    const u = new URL(url);
-    const match = u.pathname.match(/^\/episode\/([a-zA-Z0-9]{22})/);
-    return match ? match[1] : null;
-  } catch {
-    return null;
-  }
+  return TranscriberUrlUtils.extractSpotifyEpisodeId(url);
 }
 
 function isGenericSpotifyTitle(title) {

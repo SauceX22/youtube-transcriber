@@ -2626,25 +2626,10 @@ function renderRecentList(items) {
 // ---------------------------------------------------------------------------
 
 function extractVideoId(url) {
-  try {
-    const u = new URL(url);
-    const host = u.hostname.replace(/^www\./, "");
-
-    // YouTube
-    if (host === "youtube.com" || host === "m.youtube.com") {
-      if (u.pathname === "/watch") return u.searchParams.get("v");
-      if (u.pathname.startsWith("/shorts/")) return u.pathname.split("/shorts/")[1]?.split("/")[0];
-      if (u.pathname.startsWith("/embed/")) return u.pathname.split("/embed/")[1]?.split("/")[0];
-    }
-
-    // Spotify episode
-    if (host === "open.spotify.com") {
-      const match = u.pathname.match(/^\/episode\/([a-zA-Z0-9]{22})/);
-      if (match) return match[1];
-    }
-
-  } catch { /* ignore */ }
-  return null;
+  // YouTube/Spotify only (host-checked): prefixed IDs like twitter:<id>
+  // belong to the content-script flow, not tab-URL extraction.
+  const id = TranscriberUrlUtils.extractContentId(url);
+  return id && !id.includes(":") ? id : null;
 }
 
 let existingTranscriptId = null;

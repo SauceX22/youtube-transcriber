@@ -1,3 +1,5 @@
+importScripts("url-utils.js");
+
 // ---------------------------------------------------------------------------
 // API Configuration — runtime mode switching (local / cloud)
 // ---------------------------------------------------------------------------
@@ -47,13 +49,13 @@ const CONTENT_SCRIPTS = [
   {
     id: "youtube-content",
     matches: ["*://*.youtube.com/*"],
-    js: ["content.js"],
+    js: ["url-utils.js", "content.js"],
     runAt: "document_idle",
   },
   {
     id: "spotify-content",
     matches: ["*://open.spotify.com/*"],
-    js: ["page-reporter.js", "content-spotify.js"],
+    js: ["url-utils.js", "page-reporter.js", "content-spotify.js"],
     runAt: "document_idle",
   },
   {
@@ -206,40 +208,7 @@ chrome.permissions.onAdded.addListener((permissions) => {
 });
 
 function extractContentId(url) {
-  try {
-    const u = new URL(url);
-    const host = u.hostname.replace(/^www\./, "");
-
-    // YouTube
-    if (host === "youtube.com" || host === "m.youtube.com") {
-      if (u.pathname === "/watch") return u.searchParams.get("v");
-      if (u.pathname.startsWith("/shorts/")) return u.pathname.split("/shorts/")[1]?.split("/")[0];
-      if (u.pathname.startsWith("/embed/")) return u.pathname.split("/embed/")[1]?.split("/")[0];
-    }
-
-    // Spotify episode
-    if (host === "open.spotify.com") {
-      const match = u.pathname.match(/^\/episode\/([a-zA-Z0-9]{22})/);
-      if (match) return match[1];
-    }
-
-    // Twitter/X status URL
-    if (host === "x.com" || host === "twitter.com" || host === "mobile.twitter.com") {
-      const match = u.pathname.match(/^\/[^/]+\/status(?:es)?\/([0-9]+)/);
-      if (match) return `twitter:${match[1]}`;
-    }
-
-    if (host === "linkedin.com") {
-      const highlighted = u.searchParams.get("highlightedUpdateUrn");
-      const highlightedMatch = highlighted?.match(/urn:li:activity:([0-9]+)/);
-      if (highlightedMatch) return `linkedin:${highlightedMatch[1]}`;
-      const match = u.pathname.match(/(?:activity-|urn:li:activity:)([0-9]+)/);
-      if (match) return `linkedin:${match[1]}`;
-    }
-  } catch {
-    // ignore
-  }
-  return null;
+  return TranscriberUrlUtils.extractContentId(url);
 }
 
 // ---------------------------------------------------------------------------

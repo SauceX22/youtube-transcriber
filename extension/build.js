@@ -40,6 +40,7 @@ const COPY_FILES = [
   "setup-link.css",
   "content.js",
   "page-reporter.js",
+  "url-utils.js",
   "content-spotify.js",
   "content-substack.js",
   "content-twitter.js",

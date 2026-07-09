@@ -1,15 +1,5 @@
 function extractVideoId(url) {
-  try {
-    const u = new URL(url);
-    if (u.pathname === "/watch") return u.searchParams.get("v");
-    if (u.pathname.startsWith("/shorts/"))
-      return u.pathname.split("/shorts/")[1]?.split("/")[0];
-    if (u.pathname.startsWith("/embed/"))
-      return u.pathname.split("/embed/")[1]?.split("/")[0];
-  } catch {
-    // ignore
-  }
-  return null;
+  return TranscriberUrlUtils.extractYouTubeVideoId(url);
 }
 
 function isYouTubeVideoPage(url) {
