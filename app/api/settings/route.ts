@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { maskApiKey } from "@/lib/utils";
 
 const ALLOWED_KEYS = [
   "groq_api_key",
@@ -11,11 +12,6 @@ const ALLOWED_KEYS = [
   "whisper_priority",
   "groq_rate_limit",
 ];
-
-function maskApiKey(key: string): string {
-  if (key.length <= 4) return "****";
-  return "*".repeat(key.length - 4) + key.slice(-4);
-}
 
 export async function GET() {
   try {

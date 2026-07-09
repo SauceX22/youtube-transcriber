@@ -18,6 +18,14 @@ export function formatTimestamp(ms: number): string {
 }
 
 /**
+ * Mask a secret, keeping only the last 4 characters visible.
+ */
+export function maskApiKey(key: string): string {
+  if (key.length <= 4) return "****";
+  return "*".repeat(key.length - 4) + key.slice(-4);
+}
+
+/**
  * Concatenate class names, filtering out falsy values.
  * Useful for conditional className composition.
  */

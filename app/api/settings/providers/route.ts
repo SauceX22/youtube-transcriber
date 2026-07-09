@@ -1,13 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import type { ProviderType } from "@/lib/providers";
+import { maskApiKey } from "@/lib/utils";
 
 const VALID_PROVIDERS = ["openrouter", "groq", "custom"];
-
-function maskApiKey(key: string): string {
-  if (key.length <= 4) return "****";
-  return "*".repeat(key.length - 4) + key.slice(-4);
-}
 
 export async function GET() {
   try {
