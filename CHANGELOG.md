@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-09
+
+### Fixed
+- **Extension update no longer double-injects Substack/Spotify content scripts** — the shared page-reporter runtime gives every platform content script a correct synchronous `PING_TRANSCRIBER` reply. Substack previously had no handler and Spotify replied with a plain return value (which sends nothing in MV3), so the background's liveness probe failed and re-injected both scripts into open tabs on every extension update, duplicating observers and message listeners.
+- **Popup live page info now works on Spotify** — the popup's `GET_PAGE_INFO` query was answered return-value-style and always came back empty; the shared reporter answers via `sendResponse`.
+
+### Changed
+- **Extension internals deduplicated** — new `extension/page-reporter.js` (shared SPA lifecycle: staggered initial reports, URL-change MutationObserver, popstate, liveness replies) and `extension/url-utils.js` (one URL→content-ID parser for background, popup, and content scripts). Platform scripts keep only their detection logic. No behavior change beyond the fixes above.
+
+
 ## 2026-05-13
 
 ### Fixed
