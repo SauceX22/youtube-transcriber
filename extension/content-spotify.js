@@ -59,72 +59,45 @@ function getEpisodeTitle() {
   return cleanEpisodeTitle(title);
 }
 
-function reportPageInfo() {
+function getSpotifyPageInfo() {
   const nowPlaying = getNowPlayingEpisode();
   const episodeId = nowPlaying?.videoId || extractEpisodeId(window.location.href);
-  if (!episodeId) return;
   const title = nowPlaying?.title || getEpisodeTitle();
-  if (!title) return;
+  return {
+    ok: !!episodeId,
+    url: nowPlaying?.url || window.location.href,
+    title,
+    videoId: episodeId,
+    platform: "spotify",
+  };
+}
 
-  try {
-    chrome.runtime.sendMessage({
+let lastTitle = "";
+const reporter = TranscriberPageReporter.start({
+  report: () => {
+    const info = getSpotifyPageInfo();
+    if (!info.ok || !info.title) return;
+    reporter.send({
       type: "PAGE_INFO",
-      url: nowPlaying?.url || window.location.href,
-      title,
-      videoId: episodeId,
+      url: info.url,
+      title: info.title,
+      videoId: info.videoId,
       platform: "spotify",
     });
-  } catch {
-    observer.disconnect();
-  }
-}
-
-// Initial reports with delays for SPA metadata hydration.
-[500, 1500, 3000].forEach((delay) => setTimeout(reportPageInfo, delay));
-
-// Spotify is a React SPA — watch for URL changes
-let lastUrl = window.location.href;
-let lastTitle = "";
-let reportTimer = null;
-function scheduleReport(delay = 500) {
-  clearTimeout(reportTimer);
-  reportTimer = setTimeout(reportPageInfo, delay);
-}
-
-const observer = new MutationObserver(() => {
-  const title = getEpisodeTitle() || "";
-  if (window.location.href !== lastUrl) {
-    lastUrl = window.location.href;
+  },
+  resetState: () => {
     lastTitle = "";
-    scheduleReport(800);
-    return;
-  }
-  if (title && title !== lastTitle) {
-    lastTitle = title;
-    scheduleReport(100);
-  }
-});
-observer.observe(document.body, { childList: true, subtree: true });
-
-// Also listen for popstate (back/forward navigation)
-window.addEventListener("popstate", () => {
-  scheduleReport(300);
-});
-
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg?.type === "PING_TRANSCRIBER") {
-    return { ok: true };
-  }
-  if (msg?.type === "GET_PAGE_INFO") {
-    const nowPlaying = getNowPlayingEpisode();
-    const episodeId = nowPlaying?.videoId || extractEpisodeId(window.location.href);
-    const title = nowPlaying?.title || getEpisodeTitle();
-    return {
-      ok: !!episodeId,
-      url: nowPlaying?.url || window.location.href,
-      title,
-      videoId: episodeId,
-      platform: "spotify",
-    };
-  }
+  },
+  getPageInfo: getSpotifyPageInfo,
+  // Spotify swaps episode metadata without changing the URL (now-playing
+  // widget) — re-report only when the derived title actually changes.
+  onSameUrlMutation: (schedule) => {
+    const title = getEpisodeTitle() || "";
+    if (title && title !== lastTitle) {
+      lastTitle = title;
+      schedule(100);
+    }
+  },
+  initialDelays: [500, 1500, 3000],
+  urlChangeDelay: 800,
 });

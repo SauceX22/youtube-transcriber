@@ -39,6 +39,7 @@ const COPY_FILES = [
   "destination-connected.js",
   "setup-link.css",
   "content.js",
+  "page-reporter.js",
   "content-spotify.js",
   "content-substack.js",
   "content-twitter.js",

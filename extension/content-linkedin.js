@@ -7,7 +7,6 @@ const LINKEDIN_MEDIA_MAX = 50;
 const linkedinMediaUrls = [];
 let lastReportedKey = "";
 let lastClearUrl = "";
-let pendingLinkedInReportTimer = null;
 let activeVideo = null;
 let activeVideoSince = 0;
 
@@ -236,40 +235,42 @@ function reportLinkedInPageInfo() {
   lastReportedKey = key;
   lastClearUrl = "";
 
-  try {
-    chrome.runtime.sendMessage({
-      type: "PAGE_INFO",
-      platform: "linkedin",
-      url,
-      pageUrl: postLink,
-      title,
-      author,
-      channelUrl: "",
-      videoId,
-    });
-  } catch {
-    observer?.disconnect();
-  }
+  reporter.send({
+    type: "PAGE_INFO",
+    platform: "linkedin",
+    url,
+    pageUrl: postLink,
+    title,
+    author,
+    channelUrl: "",
+    videoId,
+  });
 }
 
 function clearLinkedInPageInfo() {
   if (lastClearUrl === window.location.href) return;
   lastClearUrl = window.location.href;
   lastReportedKey = "";
-  try {
-    chrome.runtime.sendMessage({ type: "CLEAR_PAGE_INFO" });
-  } catch {
-    observer?.disconnect();
-  }
+  reporter.send({ type: "CLEAR_PAGE_INFO" });
 }
 
 function scheduleLinkedInReport(delayMs = 300) {
-  if (pendingLinkedInReportTimer !== null) return;
-  pendingLinkedInReportTimer = setTimeout(() => {
-    pendingLinkedInReportTimer = null;
-    reportLinkedInPageInfo();
-  }, delayMs);
+  reporter.schedule(delayMs);
 }
+
+// Start the reporter before the media-URL hooks below: both call
+// scheduleLinkedInReport, which needs `reporter` initialized.
+const reporter = TranscriberPageReporter.start({
+  report: reportLinkedInPageInfo,
+  resetState: () => {
+    lastReportedKey = "";
+  },
+  // Original observer scheduled with the default 300ms throttle on both
+  // URL changes and same-URL mutations.
+  urlChangeDelay: 300,
+  onSameUrlMutation: (schedule) => schedule(300),
+  initialDelays: [500, 1500, 3500],
+});
 
 window.addEventListener("message", (event) => {
   if (event.source !== window) return;
@@ -284,28 +285,3 @@ try {
 } catch {
   // ignore
 }
-
-scheduleLinkedInReport(500);
-setTimeout(scheduleLinkedInReport, 1500);
-setTimeout(scheduleLinkedInReport, 3500);
-
-let lastLinkedInUrl = window.location.href;
-const observer = new MutationObserver(() => {
-  if (window.location.href !== lastLinkedInUrl) {
-    lastLinkedInUrl = window.location.href;
-    lastReportedKey = "";
-  }
-  scheduleLinkedInReport();
-});
-observer.observe(document.body, { childList: true, subtree: true });
-
-window.addEventListener("popstate", () => {
-  lastReportedKey = "";
-  scheduleLinkedInReport(300);
-});
-
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg?.type !== "PING_TRANSCRIBER") return undefined;
-  sendResponse({ ok: true });
-  return false;
-});

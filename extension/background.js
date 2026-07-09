@@ -53,19 +53,19 @@ const CONTENT_SCRIPTS = [
   {
     id: "spotify-content",
     matches: ["*://open.spotify.com/*"],
-    js: ["content-spotify.js"],
+    js: ["page-reporter.js", "content-spotify.js"],
     runAt: "document_idle",
   },
   {
     id: "substack-content",
     matches: ["*://*.substack.com/*"],
-    js: ["content-substack.js"],
+    js: ["page-reporter.js", "content-substack.js"],
     runAt: "document_idle",
   },
   {
     id: "twitter-content",
     matches: ["*://x.com/*", "*://twitter.com/*", "*://mobile.twitter.com/*"],
-    js: ["content-twitter.js"],
+    js: ["page-reporter.js", "content-twitter.js"],
     runAt: "document_idle",
   },
   {
@@ -78,7 +78,7 @@ const CONTENT_SCRIPTS = [
   {
     id: "linkedin-content",
     matches: ["*://www.linkedin.com/*", "*://linkedin.com/*"],
-    js: ["content-linkedin.js"],
+    js: ["page-reporter.js", "content-linkedin.js"],
     runAt: "document_idle",
   },
   {

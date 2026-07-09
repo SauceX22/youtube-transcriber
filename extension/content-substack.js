@@ -133,13 +133,13 @@ function getPageTitle() {
 // ── Reporter ───────────────────────────────────────────────────────────────
 
 let lastReportedUrl = null;
-function reportPageInfo() {
-  if (!isPostPage()) return;
-  const source = detectSource();
-  if (!source) return;
-  if (lastReportedUrl === source.url) return;
-  lastReportedUrl = source.url;
-  try {
+const reporter = TranscriberPageReporter.start({
+  report: () => {
+    if (!isPostPage()) return;
+    const source = detectSource();
+    if (!source) return;
+    if (lastReportedUrl === source.url) return;
+    lastReportedUrl = source.url;
     const msg = {
       type: "PAGE_INFO",
       url: source.url,
@@ -147,31 +147,9 @@ function reportPageInfo() {
       platform: source.platform,
     };
     if (source.videoId) msg.videoId = source.videoId;
-    chrome.runtime.sendMessage(msg);
-  } catch {
-    // Service worker tearing down — observer will retry next mutation
-  }
-}
-
-// Initial passes — Substack lazy-loads embeds.
-setTimeout(reportPageInfo, 400);
-setTimeout(reportPageInfo, 1500);
-setTimeout(reportPageInfo, 3500);
-
-// Mutation observer for late-arriving players and in-app navigation.
-let lastUrl = window.location.href;
-const observer = new MutationObserver(() => {
-  if (window.location.href !== lastUrl) {
-    lastUrl = window.location.href;
+    reporter.send(msg);
+  },
+  resetState: () => {
     lastReportedUrl = null;
-    setTimeout(reportPageInfo, 600);
-    return;
-  }
-  reportPageInfo();
-});
-observer.observe(document.body, { childList: true, subtree: true });
-
-window.addEventListener("popstate", () => {
-  lastReportedUrl = null;
-  setTimeout(reportPageInfo, 300);
+  },
 });

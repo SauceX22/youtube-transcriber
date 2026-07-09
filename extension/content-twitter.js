@@ -149,15 +149,6 @@ function getAuthorInfo(info) {
 
 let lastReportedKey = "";
 let lastClearUrl = "";
-let pendingReportTimer = null;
-
-function scheduleReportPageInfo(delayMs = 250) {
-  if (pendingReportTimer !== null) return;
-  pendingReportTimer = setTimeout(() => {
-    pendingReportTimer = null;
-    reportPageInfo();
-  }, delayMs);
-}
 
 function reportPageInfo() {
   const visibleTweet = findVisibleTweetArticleWithVideo();
@@ -171,11 +162,7 @@ function reportPageInfo() {
     if (lastClearUrl !== window.location.href) {
       lastClearUrl = window.location.href;
       lastReportedKey = "";
-      try {
-        chrome.runtime.sendMessage({ type: "CLEAR_PAGE_INFO" });
-      } catch {
-        observer?.disconnect();
-      }
+      reporter.send({ type: "CLEAR_PAGE_INFO" });
     }
     return;
   }
@@ -187,45 +174,24 @@ function reportPageInfo() {
   lastClearUrl = "";
 
   const author = getAuthorInfo(info);
-  try {
-    chrome.runtime.sendMessage({
-      type: "PAGE_INFO",
-      platform: "twitter",
-      url: info.canonicalUrl,
-      pageUrl: info.canonicalUrl,
-      title,
-      author: author.author,
-      channelUrl: author.channelUrl,
-      videoId: `twitter:${info.statusId}`,
-    });
-  } catch {
-    observer?.disconnect();
-  }
+  reporter.send({
+    type: "PAGE_INFO",
+    platform: "twitter",
+    url: info.canonicalUrl,
+    pageUrl: info.canonicalUrl,
+    title,
+    author: author.author,
+    channelUrl: author.channelUrl,
+    videoId: `twitter:${info.statusId}`,
+  });
 }
 
-scheduleReportPageInfo(400);
-setTimeout(scheduleReportPageInfo, 1500);
-setTimeout(scheduleReportPageInfo, 3500);
-
-let lastUrl = window.location.href;
-const observer = new MutationObserver(() => {
-  if (window.location.href !== lastUrl) {
-    lastUrl = window.location.href;
+const reporter = TranscriberPageReporter.start({
+  report: reportPageInfo,
+  resetState: () => {
     lastReportedKey = "";
-    scheduleReportPageInfo(600);
-    return;
-  }
-  scheduleReportPageInfo();
-});
-observer.observe(document.body, { childList: true, subtree: true });
-
-window.addEventListener("popstate", () => {
-  lastReportedKey = "";
-  scheduleReportPageInfo(300);
-});
-
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg?.type !== "PING_TRANSCRIBER") return undefined;
-  sendResponse({ ok: true });
-  return false;
+  },
+  // X mutates constantly; keep the 250ms throttle instead of reporting on
+  // every mutation batch.
+  onSameUrlMutation: (schedule) => schedule(250),
 });
