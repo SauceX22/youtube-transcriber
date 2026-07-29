@@ -143,8 +143,12 @@ const el = {
   obsidianVaultSaved: document.getElementById("obsidianVaultSaved"),
   obsidianAdvUriRow: document.getElementById("obsidianAdvUriRow"),
   obsidianAdvUriInput: document.getElementById("obsidianAdvUriInput"),
+  sourceIntegrityStatus: document.getElementById("sourceIntegrityStatus"),
+  sourceIntegrityDetail: document.getElementById("sourceIntegrityDetail"),
   popupToast: document.getElementById("popupToast"),
 };
+
+const SOURCE_INTEGRITY = globalThis.TranscriberSourceIntegrity;
 
 let popupToastTimer = null;
 function showPopupToast(message, kind = "info") {
@@ -161,6 +165,7 @@ function showPopupToast(message, kind = "info") {
 }
 
 let pageInfo = null;
+let activeRunContext = null;
 let progressTimer = null;
 let justCompletedId = null;
 let pollInterval = null;
@@ -179,6 +184,44 @@ let progressWriteLabels = true;
 // When true, direct TRANSCRIBE response owns completion/error handling.
 let suppressPollFinalization = false;
 let errorAction = "retry";
+
+async function recordIntegrityEvent(kind, details = {}) {
+  try {
+    return await sendMsg({
+      type: "RECORD_SOURCE_INTEGRITY_EVENT",
+      event: { ts: new Date().toISOString(), kind, ...details },
+    });
+  } catch {
+    return null;
+  }
+}
+
+function expectedSourceForPending(pending) {
+  const pendingSource = SOURCE_INTEGRITY.snapshotSource(pending || {});
+  if (
+    activeRunContext?.videoId &&
+    pendingSource.videoId &&
+    activeRunContext.videoId === pendingSource.videoId
+  ) {
+    return activeRunContext;
+  }
+  return pendingSource;
+}
+
+async function ensureSourceMatch(expected, actual, stage, provider = "") {
+  const match = SOURCE_INTEGRITY.validateSourceMatch(expected, actual);
+  if (match.ok) return true;
+  await recordIntegrityEvent("stale_source_blocked", {
+    stage,
+    provider,
+    expectedVideoId: expected?.videoId || "",
+    actualVideoId: actual?.videoId || "",
+    transcriptId: actual?.id || "",
+    message: match.reason,
+  });
+  showPopupToast("Blocked a stale transcript before summarizing. Please retry.", "error");
+  return false;
+}
 
 // YTT-259: primary button mode + chosen summarize provider. Persisted in
 // chrome.storage.sync. Mirrored here so doTranscribe / button-label updates
@@ -425,6 +468,20 @@ function stopProgress() {
   bar.style.width = "100%";
 }
 
+function showReportedProgress(pending) {
+  if (progressTimer) {
+    clearInterval(progressTimer);
+    progressTimer = null;
+  }
+  if (pending?.progressText) {
+    el.progressText.textContent = pending.progressText;
+  }
+  if (Number.isFinite(pending?.progress)) {
+    const progress = Math.max(0, Math.min(99, pending.progress));
+    document.getElementById("progressBar").style.width = `${progress}%`;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // LLM launcher — mirrors components/ui/llm-launcher.tsx from the web app.
 // Hover-reveal sparkle button per recent row; opens a small dropdown to
@@ -489,7 +546,7 @@ async function loadLlmPrompt() {
   }
 }
 
-function buildLlmLauncher(transcriptId, videoTitle) {
+function buildLlmLauncher(transcriptId, videoTitle, videoId = "") {
   const wrapper = document.createElement("div");
   wrapper.className = "recent-summarize";
 
@@ -502,7 +559,12 @@ function buildLlmLauncher(transcriptId, videoTitle) {
   btn.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    toggleLlmDropdown(wrapper, transcriptId, videoTitle);
+    toggleLlmDropdown(
+      wrapper,
+      transcriptId,
+      videoTitle,
+      SOURCE_INTEGRITY.snapshotSource({ videoId, title: videoTitle })
+    );
   });
 
   wrapper.appendChild(btn);
@@ -549,7 +611,7 @@ function onOutsideLlmClick(e) {
   }
 }
 
-async function toggleLlmDropdown(wrapper, transcriptId, videoTitle) {
+async function toggleLlmDropdown(wrapper, transcriptId, videoTitle, expectedSource) {
   if (llmOpenDropdown && llmOpenDropdown.dataset.ownerWrapperId === wrapper.dataset.wrapperId) {
     closeLlmDropdown();
     return;
@@ -615,7 +677,7 @@ async function toggleLlmDropdown(wrapper, transcriptId, videoTitle) {
       const providerId = btn.getAttribute("data-provider");
       const provider = LLM_PROVIDERS.find((p) => p.id === providerId);
       closeLlmDropdown();
-      launchWithProvider(provider, transcriptId, videoTitle);
+      launchWithProvider(provider, transcriptId, videoTitle, expectedSource);
     });
   });
 
@@ -677,7 +739,7 @@ function flattenSegments(segments) {
     .join(" ");
 }
 
-async function launchWithProvider(provider, transcriptId, videoTitle) {
+async function launchWithProvider(provider, transcriptId, videoTitle, expectedSource = null) {
   try {
     await chrome.storage.local.set({ [LLM_STORAGE_KEY]: provider.id });
   } catch {
@@ -689,6 +751,21 @@ async function launchWithProvider(provider, transcriptId, videoTitle) {
     // No visible error surface in the list yet — log and bail. Future work:
     // inline toast (see YTT-205 §3 error state).
     console.warn("Summarize: failed to load transcript", res?.error);
+    await recordIntegrityEvent("error", {
+      stage: "handoff_fetch",
+      provider: provider?.id || "",
+      expectedVideoId: expectedSource?.videoId || "",
+      transcriptId,
+      message: res?.error || "Transcript unavailable",
+    });
+    showPopupToast("Couldn't load the transcript for summarizing.", "error");
+    return;
+  }
+
+  if (
+    expectedSource &&
+    !(await ensureSourceMatch(expectedSource, res.data, "handoff_fetch", provider?.id || ""))
+  ) {
     return;
   }
 
@@ -698,17 +775,36 @@ async function launchWithProvider(provider, transcriptId, videoTitle) {
     transcriptText = flattenSegments(segments);
   } catch {
     console.warn("Summarize: transcript parse failed");
+    await recordIntegrityEvent("error", {
+      stage: "handoff_parse",
+      provider: provider?.id || "",
+      expectedVideoId: expectedSource?.videoId || "",
+      actualVideoId: res.data.videoId || "",
+      transcriptId,
+      message: "Transcript JSON could not be parsed",
+    });
+    showPopupToast("Couldn't prepare this transcript for summarizing.", "error");
     return;
   }
 
-  const instruction = llmPromptTemplate.replace(/\{title\}/g, videoTitle);
+  const authoritativeTitle = res.data.title || expectedSource?.title || videoTitle;
+  const instruction = llmPromptTemplate.replace(/\{title\}/g, authoritativeTitle);
   const prompt = `${instruction}\n\nTranscript:\n\n${transcriptText}`;
 
   // Primary path for every provider: content-script handoff so the prompt
   // lands in the composer AND the send button fires automatically.
   if (provider.handoffOrigins && provider.handoffUrl) {
     const launched = await tryLlmHandoff(provider, prompt);
-    if (launched) return;
+    if (launched) {
+      await recordIntegrityEvent("handoff_launched", {
+        stage: "external_handoff",
+        provider: provider.id,
+        expectedVideoId: expectedSource?.videoId || res.data.videoId || "",
+        actualVideoId: res.data.videoId || "",
+        transcriptId,
+      });
+      return;
+    }
   }
 
   // Fallback 1: URL prefill template. Providers should avoid this for full
@@ -719,6 +815,13 @@ async function launchWithProvider(provider, transcriptId, videoTitle) {
     const safe = encoded.length > maxLen ? encoded.slice(0, maxLen) : encoded;
     const url = provider.urlTemplate.replace("{prompt}", safe);
     await openNextToCurrentTab(url);
+    await recordIntegrityEvent("handoff_launched", {
+      stage: "url_handoff",
+      provider: provider.id,
+      expectedVideoId: expectedSource?.videoId || res.data.videoId || "",
+      actualVideoId: res.data.videoId || "",
+      transcriptId,
+    });
     return;
   }
 
@@ -732,6 +835,13 @@ async function launchWithProvider(provider, transcriptId, videoTitle) {
   }
   if (provider.openUrl) {
     await openNextToCurrentTab(provider.openUrl);
+    await recordIntegrityEvent("handoff_launched", {
+      stage: "clipboard_handoff",
+      provider: provider.id,
+      expectedVideoId: expectedSource?.videoId || res.data.videoId || "",
+      actualVideoId: res.data.videoId || "",
+      transcriptId,
+    });
   }
 }
 
@@ -2578,7 +2688,7 @@ function renderRecentList(items) {
         item.appendChild(buildNativeSummaryButton(wrap, t.id, t.title));
       }
       // External AI handoff remains available as the secondary summary path.
-      item.appendChild(buildLlmLauncher(t.id, t.title));
+      item.appendChild(buildLlmLauncher(t.id, t.title, t.videoId));
       // ⋯ menu — send to destinations, download, copy, open in web app (YTT-205 §3)
       item.appendChild(buildRowActionsMenu(t.id, t.title));
     }
@@ -2805,16 +2915,14 @@ async function init() {
     const pending = statusRes.data;
     if (pending.status === "transcribing") {
       isTranscribing = true;
+      activeRunContext = expectedSourceForPending(pending);
       el.transcribingTitle.textContent = pending.title || "Transcribing...";
       showState("Transcribing");
       // Only restart animation/polling if not already running — prevents
       // glitchy restart when switching tabs during an active transcription
       if (!pollInterval) {
-        const isCloud = mode === "cloud";
-        startProgress({ writeLabels: !isCloud });
-        if (isCloud && pending.progressText) {
-          el.progressText.textContent = pending.progressText;
-        }
+        startProgress({ writeLabels: false });
+        if (pending.progressText) showReportedProgress(pending);
         pollTranscriptionStatus();
       }
       showQueuePrompt(pending.url);
@@ -2826,6 +2934,19 @@ async function init() {
       isTranscribing = false;
       stopProgress();
       stopPolling();
+      const expectedSource = expectedSourceForPending(pending);
+      if (!(await ensureSourceMatch(expectedSource, pending.result, "resume_completion"))) {
+        activeRunContext = null;
+        await sendMsg({ type: "CLEAR_TRANSCRIPTION" });
+        showErrorState("A stale source was blocked before summarizing. Retry this video.");
+        return;
+      }
+      await recordIntegrityEvent("transcription_completed", {
+        stage: "resume_completion",
+        expectedVideoId: expectedSource.videoId,
+        actualVideoId: pending.result.videoId || "",
+        transcriptId: pending.result.id,
+      });
       await sendMsg({ type: "CLEAR_TRANSCRIPTION" });
       const summaryServiceRes = await sendMsg({ type: "CHECK_SERVICE" });
       if (initWasSuperseded(thisInit)) return;
@@ -2833,11 +2954,22 @@ async function init() {
         summaryServiceRes?.data?.summaryCacheScope || null;
       nativeSummariesAvailable =
         !!summaryServiceRes?.data?.nativeSummariesAvailable;
-      await maybeNativeSummarizeAfterTranscribe(pending.result.id, pending.title || "");
+      await maybeNativeSummarizeAfterTranscribe(
+        pending.result.id,
+        expectedSource.title || pending.title || "",
+        expectedSource
+      );
       showCompletedAndReturn(pending.result.id);
+      activeRunContext = null;
       return;
     }
     if (pending.status === "error") {
+      await recordIntegrityEvent("error", {
+        stage: "resume_transcription",
+        expectedVideoId: pending.videoId || activeRunContext?.videoId || "",
+        message: pending.error || "Transcription failed",
+      });
+      activeRunContext = null;
       await sendMsg({ type: "CLEAR_TRANSCRIPTION" });
       if (isServerDownError(pending.error)) {
         // Trigger full init to get mode-aware offline messaging
@@ -2998,9 +3130,9 @@ function pollTranscriptionStatus() {
       return;
     }
     const pending = res.data;
-    // Show real progress text from cloud polling
+    // Show real progress text from cloud polling or the local SSE bridge.
     if (pending.status === "transcribing" && pending.progressText) {
-      el.progressText.textContent = pending.progressText;
+      showReportedProgress(pending);
     }
     if (pending.status === "done" && pending.result) {
       if (suppressPollFinalization) {
@@ -3010,10 +3142,28 @@ function pollTranscriptionStatus() {
       isTranscribing = false;
       stopPolling();
       stopProgress();
+      const expectedSource = expectedSourceForPending(pending);
+      if (!(await ensureSourceMatch(expectedSource, pending.result, "poll_completion"))) {
+        activeRunContext = null;
+        await sendMsg({ type: "CLEAR_TRANSCRIPTION" });
+        showErrorState("A stale source was blocked before summarizing. Retry this video.");
+        return;
+      }
+      await recordIntegrityEvent("transcription_completed", {
+        stage: "poll_completion",
+        expectedVideoId: expectedSource.videoId,
+        actualVideoId: pending.result.videoId || "",
+        transcriptId: pending.result.id,
+      });
       await sendMsg({ type: "CLEAR_TRANSCRIPTION" });
       await nativeSummaryFlow.refreshAvailability();
-      await maybeNativeSummarizeAfterTranscribe(pending.result.id, pending.title || "");
+      await maybeNativeSummarizeAfterTranscribe(
+        pending.result.id,
+        expectedSource.title || pending.title || "",
+        expectedSource
+      );
       showCompletedAndReturn(pending.result.id);
+      activeRunContext = null;
     } else if (pending.status === "error") {
       if (suppressPollFinalization) {
         stopPolling();
@@ -3022,6 +3172,12 @@ function pollTranscriptionStatus() {
       isTranscribing = false;
       stopPolling();
       stopProgress();
+      await recordIntegrityEvent("error", {
+        stage: "poll_transcription",
+        expectedVideoId: pending.videoId || activeRunContext?.videoId || "",
+        message: pending.error || "Transcription failed",
+      });
+      activeRunContext = null;
       await sendMsg({ type: "CLEAR_TRANSCRIPTION" });
       if (isServerDownError(pending.error)) {
         init();
@@ -3059,18 +3215,24 @@ async function doTranscribe() {
     showState("Error");
     return;
   }
+  const runContext = SOURCE_INTEGRITY.snapshotSource(pageInfo);
+  activeRunContext = runContext;
+  void recordIntegrityEvent("run_started", {
+    stage: "transcription",
+    expectedVideoId: runContext.videoId,
+  });
 
   console.log("[ytt-popup] doTranscribe start", {
-    url: pageInfo.url,
-    title: pageInfo.title || "",
-    videoId: pageInfo.videoId || null,
+    url: runContext.url,
+    title: runContext.title,
+    videoId: runContext.videoId || null,
   });
 
   isTranscribing = true;
   userActionInProgress = false;
   initVersion++;
   pageStateVersion++;
-  el.transcribingTitle.textContent = pageInfo.title || "Transcribing...";
+  el.transcribingTitle.textContent = runContext.title || "Transcribing...";
   showState("Transcribing");
   el.queuePrompt.hidden = true;
 
@@ -3079,23 +3241,18 @@ async function doTranscribe() {
   // GET_SETTINGS — the prior await + indeterminate `width:100%` prepaint
   // caused the bar to animate leftward (~65% → 0%) when startProgress later
   // reset width to 0% under the CSS `transition: width 0.7s ease-out`.
-  const isCloud = currentMode === "cloud";
-  startProgress({ writeLabels: !isCloud });
-  if (isCloud) {
-    suppressPollFinalization = true;
-    pollTranscriptionStatus();
-  } else {
-    suppressPollFinalization = false;
-  }
+  startProgress({ writeLabels: false });
+  suppressPollFinalization = true;
+  pollTranscriptionStatus();
 
   const res = await sendMsg({
     type: "TRANSCRIBE",
-    url: pageInfo.url,
-    title: pageInfo.title,
-    author: pageInfo.author,
-    channelUrl: pageInfo.channelUrl,
-    videoId: pageInfo.videoId,
-    pageUrl: pageInfo.pageUrl,
+    url: runContext.url,
+    title: runContext.title,
+    author: runContext.author,
+    channelUrl: runContext.channelUrl,
+    videoId: runContext.videoId,
+    pageUrl: runContext.pageUrl,
   });
   console.log("[ytt-popup] TRANSCRIBE response", res);
 
@@ -3119,27 +3276,46 @@ async function doTranscribe() {
   stopProgress();
 
   if (res?.success && res.data?.id) {
+    if (!(await ensureSourceMatch(runContext, res.data, "transcription_response"))) {
+      activeRunContext = null;
+      await sendMsg({ type: "CLEAR_TRANSCRIPTION" });
+      showErrorState("A stale source was blocked before summarizing. Retry this video.");
+      return;
+    }
+    await recordIntegrityEvent("transcription_completed", {
+      stage: "transcription",
+      expectedVideoId: runContext.videoId,
+      actualVideoId: res.data.videoId || "",
+      transcriptId: res.data.id,
+    });
     await sendMsg({ type: "CLEAR_TRANSCRIPTION" });
     await nativeSummaryFlow.refreshAvailability();
     const useNativeSummary = nativeSummaryFlow.shouldAutoSummarize();
     // YTT-259: chain summarize when the user has set the button mode to
     // "transcribe-and-summarize".
     if (useNativeSummary) {
-      await maybeNativeSummarizeAfterTranscribe(res.data.id, pageInfo.title || "");
+      await maybeNativeSummarizeAfterTranscribe(res.data.id, runContext.title, runContext);
     } else if (transcribeMode !== "transcribe") {
       const provider = LLM_PROVIDERS.find((p) => p.id === summarizeProvider);
       if (provider) {
         // Fire-and-forget: handoff opens a new tab; the popup can then
         // continue with its normal post-transcribe flow (showing the
         // completed item, processing queue).
-        launchWithProvider(provider, res.data.id, pageInfo.title || "");
+        launchWithProvider(provider, res.data.id, runContext.title, runContext);
       } else {
         console.warn("[ytt-popup] summarize chain skipped: unknown provider", summarizeProvider);
       }
     }
     showCompletedAndReturn(res.data.id);
+    activeRunContext = null;
     processQueue();
   } else {
+    await recordIntegrityEvent("error", {
+      stage: "transcription",
+      expectedVideoId: runContext.videoId,
+      message: res?.error || "Transcription failed",
+    });
+    activeRunContext = null;
     await sendMsg({ type: "CLEAR_TRANSCRIPTION" });
     console.debug("[ytt-popup] TRANSCRIBE failed", res);
     if (isServerDownError(res?.error)) {
@@ -3185,7 +3361,11 @@ const nativeSummaryFlow = {
   },
 };
 
-async function maybeNativeSummarizeAfterTranscribe(transcriptId, videoTitle) {
+async function maybeNativeSummarizeAfterTranscribe(
+  transcriptId,
+  videoTitle,
+  expectedSource = null
+) {
   if (!nativeSummaryFlow.shouldAutoSummarize()) return null;
   el.transcribingTitle.textContent = videoTitle || "Summarizing...";
   showState("Transcribing");
@@ -3201,9 +3381,23 @@ async function maybeNativeSummarizeAfterTranscribe(transcriptId, videoTitle) {
     showState("Ready");
     const message = res?.error || "Summary failed. Transcript is ready.";
     showPopupToast(message, "error");
+    await recordIntegrityEvent("error", {
+      stage: "native_summary",
+      provider: "transcriber",
+      expectedVideoId: expectedSource?.videoId || "",
+      transcriptId,
+      message,
+    });
     return null;
   }
   await persistNativeSummary(transcriptId, res.data);
+  await recordIntegrityEvent("handoff_launched", {
+    stage: "native_summary",
+    provider: "transcriber",
+    expectedVideoId: expectedSource?.videoId || "",
+    actualVideoId: expectedSource?.videoId || "",
+    transcriptId,
+  });
   return res.data;
 }
 
@@ -3213,9 +3407,7 @@ async function processQueue() {
   if (res?.success && res.data?.processing) {
     el.transcribingTitle.textContent = res.data.title || "Transcribing...";
     showState("Transcribing");
-    const cfg = await sendMsg({ type: "GET_SETTINGS" });
-    const isCloud = cfg?.data?.mode === "cloud";
-    startProgress({ writeLabels: !isCloud });
+    startProgress({ writeLabels: false });
     showQueuePrompt();
     renderQueueList();
     pollTranscriptionStatus();
@@ -3477,7 +3669,10 @@ el.btnNavLibrary.addEventListener("click", () => {
 async function loadSettings() {
   el.settingsPanel.dataset.skipSkeleton = "true";
   try {
-    const res = await sendMsg({ type: "GET_SETTINGS" });
+    const [res] = await Promise.all([
+      sendMsg({ type: "GET_SETTINGS" }),
+      loadSourceIntegrityReport(),
+    ]);
     if (!res?.success) return;
     const { mode } = res.data;
     await setModeUI(mode);
@@ -3485,6 +3680,21 @@ async function loadSettings() {
   } finally {
     delete el.settingsPanel.dataset.skipSkeleton;
   }
+}
+
+async function loadSourceIntegrityReport() {
+  const res = await sendMsg({ type: "GET_SOURCE_INTEGRITY_REPORT" });
+  const report = res?.success ? res.data : null;
+  if (!report || !el.sourceIntegrityStatus || !el.sourceIntegrityDetail) return;
+  const incidentCount = report.staleSourceBlocks + report.errors;
+  el.sourceIntegrityStatus.textContent = incidentCount === 0 ? "Healthy" : "Attention";
+  el.sourceIntegrityStatus.classList.toggle("success", incidentCount === 0);
+  el.sourceIntegrityStatus.classList.toggle("error", incidentCount > 0);
+  el.sourceIntegrityDetail.textContent =
+    `${report.handoffs} summary handoff${report.handoffs === 1 ? "" : "s"} · ` +
+    `${report.staleSourceBlocks} stale source${report.staleSourceBlocks === 1 ? "" : "s"} blocked · ` +
+    `${report.errors} error${report.errors === 1 ? "" : "s"}. ` +
+    "Stored locally; transcript text is never recorded.";
 }
 
 // YTT-259: Load the user's primary-button mode + preferred summarize
@@ -3642,6 +3852,19 @@ async function setModeUI(mode) {
   await renderDestinationsSettings();
 }
 
+function applyServerControlView(phase) {
+  const view = TranscriberServerControl.getServerControlView(phase);
+  el.serverStatus.textContent = view.statusText;
+  el.serverStatus.hidden = false;
+  el.btnStartServer.hidden = view.startHidden;
+  el.btnStopServer.hidden = view.stopHidden;
+  el.btnStartServer.disabled = view.startDisabled;
+  el.btnStartServer.querySelector(".start-server-label").textContent =
+    view.startLabel;
+  el.btnStartServer.querySelector(".start-spinner").hidden =
+    view.spinnerHidden;
+}
+
 async function refreshServerSection(mode) {
   if (mode !== "local") {
     el.serverSection.hidden = true;
@@ -3655,10 +3878,7 @@ async function refreshServerSection(mode) {
   const serviceRes = await sendMsg({ type: "CHECK_SERVICE" });
   const serverOnline = !!(serviceRes?.success && serviceRes.data?.online);
   if (serverOnline) {
-    el.serverStatus.textContent = "Server running";
-    el.serverStatus.hidden = false;
-    el.btnStartServer.hidden = true;
-    el.btnStopServer.hidden = false;
+    applyServerControlView("running");
     return;
   }
 
@@ -3668,25 +3888,24 @@ async function refreshServerSection(mode) {
     await detectNativeHost();
   }
 
-  el.serverStatus.textContent = serverOnline ? "Server running" : "Server stopped";
-  el.serverStatus.hidden = false;
-  el.btnStartServer.hidden = serverOnline;
-  el.btnStopServer.hidden = !serverOnline;
+  applyServerControlView("stopped");
 }
 
 async function startServerClicked() {
   if (nativeStartInFlight) return;
   nativeStartInFlight = true;
-  el.btnStartServer.disabled = true;
   el.stopServerHint.hidden = true;
-  el.btnStartServer.querySelector(".start-spinner").hidden = false;
-  el.btnStartServer.querySelector(".start-server-label").textContent = "Starting…";
+  applyServerControlView("starting");
+  let startupSucceeded = false;
   try {
     const res = await callNativeHost("start", {}, 30000);
     if (res?.ok || res?.reason === "already_running") {
-      // init() picks up the change, leaves Settings, shows Ready state.
+      // Keep Settings open and refresh its own server controls. Calling the
+      // general init() here leaves the exclusive Settings view mounted, so
+      // the stale "Server stopped" copy and Start button never changed.
       stopOfflinePolling();
-      init();
+      await refreshServerSection("local");
+      startupSucceeded = true;
     } else if (res?.reason === "port_conflict") {
       el.stopServerHint.textContent =
         `Port ${res.port || 19720} is already in use by another app. ` +
@@ -3709,9 +3928,7 @@ async function startServerClicked() {
     el.stopServerHint.hidden = false;
   } finally {
     nativeStartInFlight = false;
-    el.btnStartServer.disabled = false;
-    el.btnStartServer.querySelector(".start-spinner").hidden = true;
-    el.btnStartServer.querySelector(".start-server-label").textContent = "Start";
+    if (!startupSucceeded) applyServerControlView("stopped");
   }
 }
 

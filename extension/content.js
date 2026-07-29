@@ -506,20 +506,22 @@ function closeTranscriptPanel() {
 // is invisible to the user. Net effect: zero visible flash when we click
 // Show transcript → mount panel → read segments → close panel.
 //
-// Selector covers three cases: the placeholder panel that lives in DOM
-// from page load (`target-id*='transcript'`) plus the expanded panel which
-// on modern YT can have an empty target-id (matched via :has() against
-// either segment renderer name).
+// YouTube can paint a newly-opened engagement panel before it assigns a
+// transcript target-id or mounts transcript rows. During the short automated
+// scrape window we therefore shield every engagement panel. The class exists
+// only while Transcriber is opening/reading/closing the panel, and is skipped
+// entirely when the user already had a transcript panel open.
 const SCRAPE_HIDE_STYLE_ID = "ytt-scrape-hide-style";
+const SCRAPE_HIDE_CLASS = "ytt-transcript-scraping";
 
 function injectScrapeHideStyle() {
-  if (document.getElementById(SCRAPE_HIDE_STYLE_ID)) return null;
+  document.documentElement.classList.add(SCRAPE_HIDE_CLASS);
+  const existing = document.getElementById(SCRAPE_HIDE_STYLE_ID);
+  if (existing) return existing;
   const style = document.createElement("style");
   style.id = SCRAPE_HIDE_STYLE_ID;
   style.textContent = `
-    ytd-engagement-panel-section-list-renderer[target-id*='transcript'],
-    ytd-engagement-panel-section-list-renderer:has(transcript-segment-view-model),
-    ytd-engagement-panel-section-list-renderer:has(ytd-transcript-segment-renderer) {
+    html.ytt-transcript-scraping ytd-engagement-panel-section-list-renderer {
       visibility: hidden !important;
     }
   `;
@@ -528,6 +530,7 @@ function injectScrapeHideStyle() {
 }
 
 function removeScrapeHideStyle() {
+  document.documentElement.classList.remove(SCRAPE_HIDE_CLASS);
   document.getElementById(SCRAPE_HIDE_STYLE_ID)?.remove();
 }
 
@@ -606,7 +609,10 @@ async function tryExtractTranscriptFromPanel(expectedVideoId = null) {
   // before segments finished loading), yanking it invisible mid-use would
   // be jarring. wasInitiallyExpanded handles that case.
   const hideStyle = wasInitiallyExpanded ? null : injectScrapeHideStyle();
-  let openedByTranscriber = false;
+  // Claim cleanup responsibility before the click. If YouTube opens the panel
+  // but our post-click detection misses a new DOM variant, finally still closes
+  // it while the shield is active instead of revealing it after cleanup.
+  let openedByTranscriber = !wasInitiallyExpanded;
 
   try {
     const opened = await openTranscriptPanel();
@@ -614,7 +620,6 @@ async function tryExtractTranscriptFromPanel(expectedVideoId = null) {
       debugCaptionLog("transcript scrape: panel could not be opened");
       return [];
     }
-    openedByTranscriber = !wasInitiallyExpanded;
     // Panel mounted but rows can take a moment to render — bumped from 2.5s
     // to 5s after observing real captioned videos miss the previous deadline.
     const segments = await waitForTranscriptSegments(5000);

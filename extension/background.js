@@ -1,4 +1,4 @@
-importScripts("url-utils.js");
+importScripts("url-utils.js", "source-integrity.js", "transcription-progress.js");
 
 // ---------------------------------------------------------------------------
 // API Configuration — runtime mode switching (local / cloud)
@@ -9,6 +9,36 @@ const LOCAL_BASE = "http://localhost:19720";
 // redirect hop can drop the session cookie when host-only. Hitting the
 // apex directly keeps credentials intact.
 const CLOUD_BASE = "https://transcribed.dev";
+const SOURCE_INTEGRITY_STORAGE_KEY = "sourceIntegrityLedgerV1";
+const SOURCE_INTEGRITY_EVENT_KINDS = new Set([
+  "run_started",
+  "transcription_completed",
+  "handoff_launched",
+  "stale_source_blocked",
+  "error",
+]);
+let sourceIntegrityWriteChain = Promise.resolve();
+
+async function recordSourceIntegrityEvent(event) {
+  sourceIntegrityWriteChain = sourceIntegrityWriteChain.catch(() => null).then(async () => {
+    const stored = await chrome.storage.local.get(SOURCE_INTEGRITY_STORAGE_KEY);
+    const ledger = TranscriberSourceIntegrity.appendIntegrityEvent(
+      stored[SOURCE_INTEGRITY_STORAGE_KEY],
+      event
+    );
+    await chrome.storage.local.set({ [SOURCE_INTEGRITY_STORAGE_KEY]: ledger });
+    return TranscriberSourceIntegrity.summarizeIntegrityLedger(ledger);
+  });
+  return await sourceIntegrityWriteChain;
+}
+
+async function getSourceIntegrityReport() {
+  await sourceIntegrityWriteChain;
+  const stored = await chrome.storage.local.get(SOURCE_INTEGRITY_STORAGE_KEY);
+  return TranscriberSourceIntegrity.summarizeIntegrityLedger(
+    stored[SOURCE_INTEGRITY_STORAGE_KEY]
+  );
+}
 
 let _apiConfigCache = null;
 
@@ -235,6 +265,71 @@ async function getQueue() {
 
 async function setQueue(queue) {
   await chrome.storage.session.set({ _txQueue: queue });
+}
+
+function startLocalProgressMonitor(config, startedAt) {
+  if (config.mode !== "local") {
+    return { ready: Promise.resolve(), stop() {} };
+  }
+
+  const controller = new AbortController();
+  let resolveReady;
+  const ready = new Promise((resolve) => {
+    resolveReady = resolve;
+  });
+  let writeChain = Promise.resolve();
+
+  void (async () => {
+    try {
+      const res = await fetch(`${config.baseUrl}/api/transcripts/progress`, {
+        method: "GET",
+        headers: config.headers,
+        credentials: config.credentials,
+        signal: controller.signal,
+      });
+      resolveReady();
+      if (!res.ok || !res.body) return;
+
+      const parser = TranscriberProgress.createSseParser((event) => {
+        writeChain = writeChain.then(async () => {
+          const current = await getState();
+          if (
+            current?.status !== "transcribing" ||
+            current.startedAt !== startedAt
+          ) {
+            return;
+          }
+          await setState({
+            ...current,
+            progress: event.progress,
+            progressText: event.statusText,
+          });
+        });
+      });
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        parser.push(decoder.decode(value, { stream: true }));
+      }
+      parser.push(decoder.decode());
+      parser.finish();
+      await writeChain;
+    } catch (err) {
+      resolveReady();
+      if (err?.name !== "AbortError") {
+        console.warn("[ytt-bg] local progress stream failed", err?.message || err);
+      }
+    }
+  })();
+
+  return {
+    ready,
+    stop() {
+      controller.abort();
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1272,7 +1367,14 @@ async function doTranscribe(url, title, author = "", channelUrl = "", videoId = 
       : { title: title || "", author: author || "", channelUrl: channelUrl || "", videoId: videoId || "", pageUrl: pageUrl || "" };
     const config = await getApiConfig();
     const tReq = performance.now();
-    const data = await transcribeRequest(url, extras, config);
+    const localProgress = startLocalProgressMonitor(config, state.startedAt);
+    await localProgress.ready;
+    let data;
+    try {
+      data = await transcribeRequest(url, extras, config);
+    } finally {
+      localProgress.stop();
+    }
     const tServer = performance.now() - tReq;
     const tTotal = performance.now() - t0;
     const benchmark = {
@@ -1629,6 +1731,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const { mode } = await chrome.storage.sync.get(["mode"]);
         return { mode: mode || "cloud" };
       }
+
+      case "RECORD_SOURCE_INTEGRITY_EVENT": {
+        if (!message.event || typeof message.event !== "object") {
+          throw new Error("Invalid source integrity event");
+        }
+        if (!SOURCE_INTEGRITY_EVENT_KINDS.has(message.event.kind)) {
+          throw new Error("Invalid source integrity event kind");
+        }
+        return await recordSourceIntegrityEvent({
+          ts: typeof message.event.ts === "string" ? message.event.ts : "",
+          kind: message.event.kind,
+          stage: clampTitle(message.event.stage),
+          expectedVideoId: validContentId(message.event.expectedVideoId)
+            ? message.event.expectedVideoId
+            : "",
+          actualVideoId: validContentId(message.event.actualVideoId)
+            ? message.event.actualVideoId
+            : "",
+          transcriptId: validId(message.event.transcriptId)
+            ? message.event.transcriptId
+            : "",
+          provider: clampTitle(message.event.provider),
+          message: clampTitle(message.event.message),
+        });
+      }
+
+      case "GET_SOURCE_INTEGRITY_REPORT":
+        return await getSourceIntegrityReport();
 
       case "DETECT_LOCAL": {
         const localAvailable = await detectLocalInstance();

@@ -23,6 +23,7 @@ const DESIGN_SYSTEM_SRC = path.join(SRC, "..", "design-system");
 const DEV_KEY_PATH = path.join(SRC, "..", ".dev", "extension-dev-key.pem");
 const LEGACY_DEV_KEY_PATH = path.join(SRC, "dev-key.pem");
 const DEV_LABEL = (process.env.EXTENSION_DEV_LABEL || "").trim();
+const DEV_NAME = (process.env.EXTENSION_DEV_NAME || "").trim();
 const DEV_SHORT_NAME = (process.env.EXTENSION_DEV_SHORT_NAME || "").trim();
 
 // Files to copy as-is (relative to extension/)
@@ -41,6 +42,9 @@ const COPY_FILES = [
   "content.js",
   "page-reporter.js",
   "url-utils.js",
+  "source-integrity.js",
+  "transcription-progress.js",
+  "server-control-state.js",
   "content-spotify.js",
   "content-substack.js",
   "content-twitter.js",
@@ -114,7 +118,7 @@ if (IS_DEV) {
   const manifestPath = path.join(DIST, "manifest.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   const label = DEV_LABEL || "dev";
-  manifest.name = "Transcriber";
+  manifest.name = DEV_NAME || "Transcriber";
   manifest.short_name = DEV_SHORT_NAME || "Transcriber";
   if (DEV_LABEL) {
     const versionLabel = DEV_LABEL.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");

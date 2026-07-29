@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-07-29
+
+### Fixed
+- **Self-hosted progress no longer stalls on a synthetic “Almost done…” label** — The local server’s existing progress event stream is now bridged into the extension’s persisted transcription state. The side panel displays the actual download/transcription stage, preserves it across panel reopen, and stops the time-based progress animation as soon as real progress arrives.
+- **Settings Server controls now show startup progress and completion** — Clicking Start immediately disables the button, changes it to “Starting…” with a spinner, and updates the status to “Starting server…”. Once the native helper confirms readiness, Settings now refreshes its own Server section to “Server running” with a Stop button instead of calling the general initializer and leaving stale “Server stopped” UI behind.
+- **Start recovers a tracked but unhealthy local server** — If the native helper still owns a server process but its health route is broken, Start now stops that tracked process, waits for port 19720 to clear, and launches a fresh server. Unrelated applications using the port remain protected as port conflicts.
+
+## 2026-07-19
+
+### Added
+- **Source-integrity history and 30-day health report (1.6.29)** — Summary runs now keep a local, transcript-free daily ledger of completed handoffs, blocked stale-source mismatches, and errors. The last 90 daily buckets and 200 recent events are retained in `chrome.storage.local`; Settings → Advanced shows the rolling 30-day totals. A blocked mismatch also surfaces immediately instead of silently sending the wrong source to Claude, ChatGPT, or the native summary flow.
+- **Extension regression tests** — Added Node tests for immutable source snapshots, source-ID validation, rolling integrity reports, and the YouTube transcript scrape shield. Run with `npm run test:extension`.
+
+### Fixed
+- **Transcribe & Summarize could hand the previous video to the AI (1.6.29)** — The side panel used mutable global `pageInfo` both before and after the asynchronous transcription request. Switching tabs or navigating while the run was active could replace the operation title/source context, and the handoff accepted whatever transcript record it fetched without confirming the video ID. Each run now snapshots its source at click time, uses the stored transcript title, and validates the completed and fetched transcript IDs against that snapshot before any summary prompt is sent.
+- **YouTube transcript panel could flash during caption extraction (1.6.29)** — YouTube can paint an engagement panel before assigning its transcript-specific target ID or mounting transcript rows, which let one frame escape the old narrow hide selector. The automated scrape now installs a temporary broad engagement-panel shield before clicking “Show transcript,” then removes it in cleanup. Panels the user opened themselves remain untouched.
+
 ## 2026-07-09
 
 ### Fixed

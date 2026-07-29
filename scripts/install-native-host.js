@@ -68,7 +68,7 @@ function makeWrapperIfNeeded() {
   if (process.platform === "win32") return HOST_SCRIPT;
 
   const nodeBin = process.execPath;
-  const wrapperPath = path.join(path.dirname(HOST_SCRIPT), "transcriber-host.sh");
+  const wrapperPath = path.join(manifestDir(), `${HOST_NAME}.sh`);
   const wrapper = `#!/bin/sh\nexec "${nodeBin}" "${HOST_SCRIPT}" "$@"\n`;
   fs.writeFileSync(wrapperPath, wrapper, { mode: 0o755 });
   fs.chmodSync(HOST_SCRIPT, 0o755);

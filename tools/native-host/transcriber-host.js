@@ -18,6 +18,7 @@ const path = require("path");
 const os = require("os");
 const http = require("http");
 const { spawn } = require("child_process");
+const { chooseStartAction } = require("./server-start-policy.js");
 
 const PORT = 19720;
 const HEALTH_URL = `http://127.0.0.1:${PORT}/api/health`;
@@ -93,8 +94,13 @@ function probeOnce(timeoutMs = 1500) {
       // Drain body so the socket closes cleanly.
       res.on("data", () => {});
       res.on("end", () => {
-        if (identity) resolve({ status: "ready", identity, statusCode: res.statusCode });
-        else resolve({ status: "foreign", statusCode: res.statusCode });
+      if (identity && (res.statusCode === 200 || res.statusCode === 503)) {
+        resolve({ status: "ready", identity, statusCode: res.statusCode });
+      } else if (identity) {
+        resolve({ status: "unhealthy", identity, statusCode: res.statusCode });
+      } else {
+        resolve({ status: "foreign", statusCode: res.statusCode });
+      }
       });
     });
     req.on("error", () => resolve({ status: "down" }));
@@ -118,11 +124,37 @@ async function probeWithRetry(attempts, intervalMs) {
 async function startServer() {
   // First check if something is already on the port.
   const probe = await probeOnce(800);
-  if (probe.status === "ready") {
+  const trackedState = readState();
+  const trackedProcessAlive = isPidAlive(trackedState.pid);
+  const action = chooseStartAction({
+    probeStatus: probe.status,
+    trackedProcessAlive,
+  });
+  if (action === "already_running") {
     return { started: false, reason: "already_running" };
   }
-  if (probe.status === "foreign") {
+  if (action === "port_conflict") {
     return { started: false, reason: "port_conflict" };
+  }
+  if (action === "restart_tracked") {
+    log("restarting tracked unhealthy server", {
+      pid: trackedState.pid,
+      probeStatus: probe.status,
+      statusCode: probe.statusCode,
+    });
+    stopServer();
+    let released = false;
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const afterStop = await probeOnce(300);
+      if (afterStop.status === "down") {
+        released = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    if (!released) {
+      return { started: false, reason: "port_conflict" };
+    }
   }
 
   // Launch detached so the server keeps running after the host exits.

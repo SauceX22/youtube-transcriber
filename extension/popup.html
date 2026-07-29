@@ -288,6 +288,13 @@
           <p class="settings-advanced-help">
             Cloud is recommended. Self-hosted runs transcription on your own machine — requires Python, ffmpeg, and a local server.
           </p>
+          <div class="settings-row">
+            <span class="settings-label">Source integrity · 30 days</span>
+            <span class="settings-status" id="sourceIntegrityStatus">Checking…</span>
+          </div>
+          <p class="settings-advanced-help" id="sourceIntegrityDetail">
+            Tracks summary handoffs, blocked stale sources, and errors locally. Transcript text is never recorded.
+          </p>
         </div>
       </details>
     </div>
@@ -344,6 +351,8 @@
 
   <script src="ui-icons.js"></script>
   <script src="url-utils.js"></script>
+  <script src="source-integrity.js"></script>
+  <script src="server-control-state.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
