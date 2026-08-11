@@ -1,3 +1,29 @@
+(() => {
+const previousLifecycle = globalThis.__transcriberYouTubeContentLifecycle;
+if (previousLifecycle?.runtime === chrome.runtime) return;
+try {
+  previousLifecycle?.cleanup?.();
+} catch { /* stale extension contexts can reject cleanup calls */ }
+
+const runtimeApi = chrome.runtime;
+const cleanupTasks = [];
+const lifecycle = {
+  runtime: runtimeApi,
+  cleanup() {
+    for (const cleanup of cleanupTasks.splice(0).reverse()) {
+      try { cleanup(); } catch { /* best-effort stale lifecycle cleanup */ }
+    }
+    if (globalThis.__transcriberYouTubeContentLifecycle === lifecycle) {
+      delete globalThis.__transcriberYouTubeContentLifecycle;
+    }
+  },
+};
+globalThis.__transcriberYouTubeContentLifecycle = lifecycle;
+
+function addCleanup(cleanup) {
+  cleanupTasks.push(cleanup);
+}
+
 function extractVideoId(url) {
   return TranscriberUrlUtils.extractYouTubeVideoId(url);
 }
@@ -106,12 +132,21 @@ function schedulePageInfoReports() {
   // on separate ticks. Re-report as hydration settles so we don't persist a
   // previous watch-page title for the new video.
   [300, 900, 1800, 3200].forEach((delay) => {
-    setTimeout(reportPageInfo, delay);
+    const timer = setTimeout(() => {
+      reportTimers.delete(timer);
+      reportPageInfo();
+    }, delay);
+    reportTimers.add(timer);
   });
 }
 
 let currentVideoId = extractVideoId(window.location.href);
 let lastVideoIdChangeAt = Date.now();
+const reportTimers = new Set();
+addCleanup(() => {
+  for (const timer of reportTimers) clearTimeout(timer);
+  reportTimers.clear();
+});
 
 function markVideoNavigation() {
   const nextVideoId = extractVideoId(window.location.href);
@@ -133,18 +168,31 @@ let observer = new MutationObserver(() => {
     schedulePageInfoReports();
   }
 });
-observer.observe(document.body, { childList: true, subtree: true });
+addCleanup(() => observer.disconnect());
+function observePageWhenReady() {
+  if (document.body) {
+    observer.observe(document.body, { childList: true, subtree: true });
+    return;
+  }
+  document.addEventListener("DOMContentLoaded", observePageWhenReady, { once: true });
+}
+addCleanup(() => document.removeEventListener("DOMContentLoaded", observePageWhenReady));
+observePageWhenReady();
 
 // YouTube's own navigation event
-window.addEventListener("yt-navigate-finish", () => {
+function onYouTubeNavigateFinish() {
   markVideoNavigation();
   schedulePageInfoReports();
-});
+}
+window.addEventListener("yt-navigate-finish", onYouTubeNavigateFinish);
+addCleanup(() => window.removeEventListener("yt-navigate-finish", onYouTubeNavigateFinish));
 
-document.addEventListener("yt-page-data-updated", () => {
+function onYouTubePageDataUpdated() {
   markVideoNavigation();
   schedulePageInfoReports();
-});
+}
+document.addEventListener("yt-page-data-updated", onYouTubePageDataUpdated);
+addCleanup(() => document.removeEventListener("yt-page-data-updated", onYouTubePageDataUpdated));
 
 // Close side panel when entering fullscreen
 function closePanel() {
@@ -160,6 +208,10 @@ function onFullscreenChange() {
 }
 document.addEventListener("fullscreenchange", onFullscreenChange);
 document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+addCleanup(() => {
+  document.removeEventListener("fullscreenchange", onFullscreenChange);
+  document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
+});
 
 // YouTube's player class changes when entering fullscreen
 const ytObserver = new MutationObserver(() => {
@@ -168,19 +220,24 @@ const ytObserver = new MutationObserver(() => {
     closePanel();
   }
 });
+addCleanup(() => ytObserver.disconnect());
+let watchPlayerTimer = null;
 function watchPlayer() {
   const player = document.getElementById("movie_player");
   if (player) {
     ytObserver.observe(player, { attributes: true, attributeFilter: ["class"] });
   } else {
-    setTimeout(watchPlayer, 1000);
+    watchPlayerTimer = setTimeout(watchPlayer, 1000);
   }
 }
+addCleanup(() => {
+  if (watchPlayerTimer) clearTimeout(watchPlayerTimer);
+});
 watchPlayer();
 
 // Catch YouTube's 'f' fullscreen shortcut — close panel after a short delay
 // to let YouTube's fullscreen kick in
-document.addEventListener("keydown", (e) => {
+function onYouTubeKeydown(e) {
   if (e.key === "f" && !e.ctrlKey && !e.metaKey && !e.altKey) {
     const tag = e.target?.tagName;
     // Only act if not typing in an input/textarea
@@ -188,7 +245,9 @@ document.addEventListener("keydown", (e) => {
       setTimeout(closePanel, 100);
     }
   }
-});
+}
+document.addEventListener("keydown", onYouTubeKeydown);
+addCleanup(() => document.removeEventListener("keydown", onYouTubeKeydown));
 
 // ---------------------------------------------------------------------------
 // Client-side transcript scrape (fast path).
@@ -653,7 +712,7 @@ async function tryExtractTranscriptFromPanel(expectedVideoId = null) {
   }
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+function onRuntimeMessage(msg, _sender, sendResponse) {
   // Liveness probe — bg uses this to detect whether the new content script
   // is already attached on an existing tab before deciding to inject. Must
   // respond synchronously so chrome.runtime.lastError doesn't fire when the
@@ -704,4 +763,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
   })();
   return true; // async sendResponse
-});
+}
+runtimeApi.onMessage.addListener(onRuntimeMessage);
+addCleanup(() => runtimeApi.onMessage.removeListener(onRuntimeMessage));
+})();

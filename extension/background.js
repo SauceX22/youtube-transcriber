@@ -133,7 +133,21 @@ const CONTENT_SCRIPTS = [
   },
 ];
 
-async function registerContentScripts() {
+let contentScriptRegistrationChain = Promise.resolve();
+
+function registerContentScripts() {
+  // onInstalled, onStartup, and permissions.onAdded can fire close together.
+  // Serialize the unregister/register cycle so two callers cannot both observe
+  // an empty registry and then race to register the same script IDs.
+  contentScriptRegistrationChain = contentScriptRegistrationChain
+    .then(syncContentScripts, syncContentScripts)
+    .catch((err) => {
+      console.error("[ytt-bg] content-script registration failed", err?.message || err);
+    });
+  return contentScriptRegistrationChain;
+}
+
+async function syncContentScripts() {
   // Unregister existing scripts first to avoid duplicates
   try {
     const existing = await chrome.scripting.getRegisteredContentScripts();
@@ -695,7 +709,7 @@ async function tryExtractCaptions(url) {
     try {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        files: ["content.js"],
+        files: ["url-utils.js", "content.js"],
         injectImmediately: true,
       });
       // Fresh content script needs a beat to attach the message listener.

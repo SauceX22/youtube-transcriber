@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-09
+
+### Fixed
+- **YouTube tabs no longer lose the Transcriber listener during extension reload (1.6.30)** — Lifecycle-triggered content-script registration is serialized so concurrent startup/install events cannot race on the same script IDs. Recovery injection now includes the shared URL utilities, the YouTube content script is safe to inject more than once, and early injection waits for `document.body` before attaching its observer. This fixes the combined `Duplicate script ID 'youtube-content'`, `TranscriberUrlUtils has already been declared`, `currentVideoId has already been declared`, and null `MutationObserver` failures that left the side panel unable to start transcription.
+
 ## 2026-07-29
 
 ### Fixed

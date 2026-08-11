@@ -5,7 +5,10 @@
 // CONTENT_SCRIPTS. Keep in sync with the server-side parsing in
 // lib/url-parser.ts and lib/youtube.ts.
 
-const TranscriberUrlUtils = (() => {
+// `var` is intentional: programmatic recovery may inject this file into an
+// existing tab more than once. A top-level `const` makes the second injection
+// fail before content.js can attach its listener.
+var TranscriberUrlUtils = globalThis.TranscriberUrlUtils || (() => {
   "use strict";
 
   function extractYouTubeVideoId(url) {
@@ -67,3 +70,5 @@ const TranscriberUrlUtils = (() => {
 
   return { extractYouTubeVideoId, extractSpotifyEpisodeId, extractContentId };
 })();
+
+globalThis.TranscriberUrlUtils = TranscriberUrlUtils;
