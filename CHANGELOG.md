@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-18
+
+### Fixed
+- **Custom-domain Substack video posts are recognized in the side panel** — Opening Transcriber on a publication such as `rfemedia.com` now uses the explicit `activeTab` grant to inspect Substack player metadata, derives the same stable `substack:<post-id>` identity as the backend, and sends the canonical post URL through the existing generic yt-dlp transcription pipeline. The extension does not request blanket access to all websites. The packaged build now includes the detector, with a regression fixture for the reported RFEMedia post.
+
 ## 2026-08-09
 
 ### Fixed

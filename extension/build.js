@@ -42,6 +42,7 @@ const COPY_FILES = [
   "content.js",
   "page-reporter.js",
   "url-utils.js",
+  "media-page-detector.js",
   "source-integrity.js",
   "transcription-progress.js",
   "server-control-state.js",

@@ -371,6 +371,22 @@ async function requestLivePageInfo(tab) {
   }
 }
 
+async function probeActiveMediaPage(tab) {
+  if (!tab?.id || !globalThis.TranscriberMediaPageDetector?.detect) return null;
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: globalThis.TranscriberMediaPageDetector.detect,
+    });
+    const info = results?.[0]?.result;
+    return info?.ok && info.url && info.videoId ? info : null;
+  } catch {
+    // activeTab access can expire after navigation. The normal registered
+    // content-script paths still handle the sites with permanent permission.
+    return null;
+  }
+}
+
 async function getFreshPageInfoForTab(tab) {
   if (!tab?.id) return {};
   let storedPageInfo = {};
@@ -393,6 +409,11 @@ async function getFreshPageInfoForTab(tab) {
     ) {
       return livePageInfo;
     }
+  }
+
+  if (!storedPageInfo.videoId) {
+    const detectedPageInfo = await probeActiveMediaPage(tab);
+    if (detectedPageInfo) return detectedPageInfo;
   }
 
   return storedPageInfo;
