@@ -120,6 +120,14 @@ body::-webkit-scrollbar-thumb:hover {
   outline: none;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.20);
 }
+
+.drive-privacy-notice {
+  margin: 10px 0 0;
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: center;
+}
 /* Already transcribed */
 .already-transcribed {
   display: inline-flex;

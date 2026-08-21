@@ -92,6 +92,7 @@ const el = {
   offlinePath: document.getElementById("offlinePath"),
   offlineLocalMsg: document.getElementById("offlineLocalMsg"),
   btnTranscribeLabel: document.getElementById("btnTranscribeLabel"),
+  drivePrivacyNotice: document.getElementById("drivePrivacyNotice"),
   actionSection: document.getElementById("actionSection"),
   modeTranscribe: document.getElementById("modeTranscribe"),
   modeTranscribeSummarize: document.getElementById("modeTranscribeSummarize"),
@@ -293,6 +294,18 @@ function isSpotifyUrl(url) {
   }
 }
 
+function isGoogleDriveUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.hostname.replace(/^www\./, "") === "drive.google.com" &&
+      !!TranscriberUrlUtils.extractGoogleDriveFileId(url)
+    );
+  } catch {
+    return false;
+  }
+}
+
 function isGenericSpotifyTitle(title) {
   const cleaned = (title || "").trim();
   return (
@@ -356,7 +369,11 @@ function pageInfoFromTab(tab, stored = {}) {
     author: storedMatchesTab ? stored.author || "" : "",
     channelUrl: storedMatchesTab ? stored.channelUrl || "" : "",
     videoId,
-    platform: storedMatchesTab ? stored.platform || "" : "",
+    platform: isGoogleDriveUrl(url)
+      ? "drive"
+      : storedMatchesTab
+        ? stored.platform || ""
+        : "",
     isLive: storedMatchesTab ? !!stored.isLive : false,
   };
 }
@@ -2757,10 +2774,10 @@ function renderRecentList(items) {
 // ---------------------------------------------------------------------------
 
 function extractVideoId(url) {
-  // YouTube/Spotify only (host-checked): prefixed IDs like twitter:<id>
-  // belong to the content-script flow, not tab-URL extraction.
+  // YouTube, Spotify, and Google Drive are host-checked from the tab URL.
+  // Social prefixed IDs still belong to their content-script flow.
   const id = TranscriberUrlUtils.extractContentId(url);
-  return id && !id.includes(":") ? id : null;
+  return id && (!id.includes(":") || id.startsWith("drive:")) ? id : null;
 }
 
 let existingTranscriptId = null;
@@ -2780,6 +2797,7 @@ async function showCurrentPageState() {
   }
 
   el.videoTitle.textContent = pageInfo.title || pageInfo.url;
+  updateTranscribeButtonLabel();
 
   // Hide all action elements until we know which to show
   el.btnTranscribe.hidden = true;
@@ -2892,6 +2910,7 @@ async function init() {
     pageInfo = pageInfoFromTab(tab, storedPageInfo);
     currentTabUrl = tab.url;
     currentTabId = tab.id;
+    updateTranscribeButtonLabel();
   }
 
   // PHASE 2 — optimistic paint. Always render a state on the first frame
@@ -2975,11 +2994,22 @@ async function init() {
         summaryServiceRes?.data?.summaryCacheScope || null;
       nativeSummariesAvailable =
         !!summaryServiceRes?.data?.nativeSummariesAvailable;
-      await maybeNativeSummarizeAfterTranscribe(
+      const nativeSummary = await maybeNativeSummarizeAfterTranscribe(
         pending.result.id,
         expectedSource.title || pending.title || "",
         expectedSource
       );
+      if (!nativeSummary && transcribeMode !== "transcribe") {
+        const provider = LLM_PROVIDERS.find((item) => item.id === summarizeProvider);
+        if (provider) {
+          launchWithProvider(
+            provider,
+            pending.result.id,
+            expectedSource.title || pending.title || "",
+            expectedSource
+          );
+        }
+      }
       showCompletedAndReturn(pending.result.id);
       activeRunContext = null;
       return;
@@ -3808,13 +3838,21 @@ function updateTranscribeButtonLabel() {
   if (!el.btnTranscribeLabel) return;
   const provider = LLM_PROVIDERS.find((p) => p.id === summarizeProvider);
   const usesSummarize = transcribeMode !== "transcribe" && !!provider;
-  if (transcribeMode === "transcribe-and-summarize") {
+  const isPrivateDrive = pageInfo?.platform === "drive";
+  if (isPrivateDrive && transcribeMode === "transcribe-and-summarize" && provider) {
+    el.btnTranscribeLabel.textContent = `Transcribe locally & open in ${provider.name}`;
+  } else if (isPrivateDrive) {
+    el.btnTranscribeLabel.textContent = "Transcribe locally";
+  } else if (transcribeMode === "transcribe-and-summarize") {
     el.btnTranscribeLabel.textContent = "Transcribe & Summarize";
   } else {
     el.btnTranscribeLabel.textContent = "Transcribe";
   }
+  if (el.drivePrivacyNotice) el.drivePrivacyNotice.hidden = !isPrivateDrive;
   if (el.btnTranscribe) {
-    el.btnTranscribe.title = usesSummarize && nativeSummaryFlow.isEnabled()
+    el.btnTranscribe.title = isPrivateDrive
+      ? "Grants this app access to only this file, downloads it temporarily, and transcribes it with local Whisper"
+      : usesSummarize && nativeSummaryFlow.isEnabled()
       ? "Shows summary in Transcriber"
       : usesSummarize
       ? `Summarizes with ${provider.name}`

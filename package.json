@@ -21,6 +21,7 @@
     "build:ext": "node extension/build.js",
     "build:ext:dev": "node extension/build.js --dev",
     "test:extension": "node --test extension/*.test.js tools/native-host/*.test.js",
+    "test:drive": "tsx --test lib/google-drive.test.ts",
     "workbench:ext": "python3 -m http.server 19721 --bind 127.0.0.1"
   },
   "keywords": [],

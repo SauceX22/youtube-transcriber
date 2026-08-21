@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-21
+
+### Added
+- **Private Google Drive transcription for the self-hosted extension (YTT-370)** — Individual Drive video or audio files can be authorized with the narrow `drive.file` scope, downloaded to a temporary local directory, transcribed with local Whisper only, and removed after processing. OAuth tokens remain in memory, polling jobs expire, imports are limited to one active job, and only explicitly configured Transcriber extension IDs can start or poll private imports.
+
 ## 2026-08-18
 
 ### Fixed

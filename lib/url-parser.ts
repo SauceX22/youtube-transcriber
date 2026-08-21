@@ -1,6 +1,7 @@
 import { extractVideoId } from "./youtube";
+import { extractGoogleDriveFileId } from "./google-drive-url";
 
-export type Platform = "youtube" | "spotify" | "generic";
+export type Platform = "youtube" | "spotify" | "drive" | "generic";
 
 export interface ParsedUrl {
   platform: Platform;
@@ -66,6 +67,11 @@ export function parseContentUrl(url: string): ParsedUrl {
   ) {
     const videoId = extractVideoId(url);
     return { platform: "youtube", contentId: videoId, originalUrl: url };
+  }
+
+  const driveFileId = extractGoogleDriveFileId(url);
+  if (driveFileId) {
+    return { platform: "drive", contentId: `drive:${driveFileId}`, originalUrl: url };
   }
 
   const twitterStatusId = extractTwitterStatusId(parsed);

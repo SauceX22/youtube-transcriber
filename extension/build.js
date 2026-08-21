@@ -45,6 +45,7 @@ const COPY_FILES = [
   "media-page-detector.js",
   "source-integrity.js",
   "transcription-progress.js",
+  "google-drive-import.js",
   "server-control-state.js",
   "content-spotify.js",
   "content-substack.js",

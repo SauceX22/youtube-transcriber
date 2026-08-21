@@ -157,6 +157,14 @@ Paste a URL. The app grabs the transcript using the fastest method available on 
 
 > Spotify support requires `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` in `.env` (free from [developer.spotify.com](https://developer.spotify.com/dashboard)). Spotify-exclusive podcasts without a public RSS feed are not supported.
 
+**Private Google Drive videos (self-hosted extension):**
+1. Opens Google's Picker and requests the narrow `drive.file` scope for the selected file
+2. Downloads that file to a temporary folder on the local machine
+3. Transcribes with local Whisper only; configured cloud transcription providers are not used
+4. Deletes the temporary media file whether transcription succeeds or fails
+
+The OAuth access token is kept only in memory for the active import. It is not written to the database, extension storage, URLs, or logs. Summarizing with Claude or ChatGPT remains a separate, explicit handoff of transcript text.
+
 Works fully offline by default for YouTube. Cloud Whisper is optional — bring your own API key to enable it.
 
 ## Features
@@ -164,6 +172,7 @@ Works fully offline by default for YouTube. Cloud Whisper is optional — bring 
 - **YouTube + Spotify** — paste a YouTube video URL or Spotify podcast episode URL
 - **Local + cloud transcription** — free local Whisper by default, optional cloud providers (Groq, OpenRouter, or custom endpoint) for faster results with your own API key
 - **Chrome extension** — persistent side panel that transcribes YouTube videos and Spotify episodes from your browser
+- **Private Google Drive import** — per-file consent and temporary local-only processing in self-hosted mode
 - **Multi-language captions** — request captions in any language YouTube supports (see [Language Preference](#language-preference) below)
 - **Summarize with LLM** — send any transcript straight to ChatGPT or Claude. ChatGPT opens with the prompt pre-filled; Claude copies it to your clipboard so you can paste (⌘V) into a new chat
 - **Queue system** — batch-process multiple videos
@@ -272,6 +281,15 @@ WHISPER_PYTHON_BIN="/path/to/your/.venv/bin/python3"
 # Optional — cloud providers are configured in Settings (UI)
 # Legacy env var still works for a single Groq key:
 # WHISPER_CLOUD_API_KEY="gsk_..."
+
+# Optional — private Google Drive files in the self-hosted Chrome extension.
+# Enable the Google Drive API and Google Picker API in your Google Cloud project,
+# create an OAuth 2.0 Web application client, and register the redirect URI below.
+# GOOGLE_DRIVE_CLIENT_ID="...apps.googleusercontent.com"
+# GOOGLE_DRIVE_CLIENT_SECRET="..."
+# GOOGLE_DRIVE_REDIRECT_URI="http://127.0.0.1:19720/api/drive/oauth/callback"
+# GOOGLE_DRIVE_EXTENSION_IDS="abcdefghijklmnopqrstuvwxyzabcdef" # chrome://extensions ID
+# GOOGLE_DRIVE_MAX_BYTES="5368709120" # default: 5 GiB
 ```
 
 **Windows paths:**

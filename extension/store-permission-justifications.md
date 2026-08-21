@@ -20,6 +20,9 @@ Paste these into the corresponding fields in the Chrome Web Store developer cons
 ### `storage`
 > Persists user settings (mode selection, destination preferences, Obsidian vault name) and current transcription queue/state across browser restarts.
 
+### `alarms`
+> Wakes the Manifest V3 background worker to check long-running private Google Drive imports handled by the user's local Transcriber service. Each alarm is a one-shot local status check; it does not transmit data to a third party.
+
 ### `sidePanel`
 > The extension's primary UI is a Chrome side panel that stays open beside the video being transcribed.
 

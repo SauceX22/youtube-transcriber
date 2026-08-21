@@ -911,6 +911,29 @@ export async function getVideoTranscript(
     return getSpotifyTranscript(parsed.contentId, parsed.originalUrl);
   }
 
+  if (parsed.platform === "drive") {
+    try {
+      // Publicly shared Drive files can still use the existing generic path.
+      return await getGenericTranscript(parsed.originalUrl, {
+        canonicalVideoId: parsed.contentId,
+        platform: "drive",
+        localOnly: true,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const looksLikeAccessFailure =
+        /(?:private|permission|access denied|forbidden|unauthorized|sign[ -]?in|log[ -]?in|http error 40[13])/i.test(
+          message
+        );
+      if (looksLikeAccessFailure) {
+        throw new Error(
+          "Private Google Drive files require per-file permission. Open the file in Chrome and use the self-hosted Transcriber extension."
+        );
+      }
+      throw error;
+    }
+  }
+
   if (parsed.platform === "generic") {
     return getGenericTranscript(parsed.originalUrl);
   }

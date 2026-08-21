@@ -141,15 +141,23 @@ async function reencodeForCloud(inputPath: string, outputId: string): Promise<st
   return outputPath;
 }
 
-async function transcribeAudio(
+export async function transcribeMediaFile(
   audioPath: string,
-  videoId: string
+  videoId: string,
+  options: { localOnly?: boolean } = {}
 ): Promise<{ segments: TranscriptSegment[]; source: string }> {
-  const [whisperEnabled, whisperPriority, providers] = await Promise.all([
+  const [whisperEnabled, whisperPriority, configuredProviders] = await Promise.all([
     isWhisperEnabled(),
     getWhisperPriority(),
-    getEnabledProviders(),
+    options.localOnly ? Promise.resolve([]) : getEnabledProviders(),
   ]);
+  const providers = options.localOnly ? [] : configuredProviders;
+
+  if (options.localOnly && !whisperEnabled) {
+    throw new Error(
+      "Private Google Drive files require local Whisper. Enable local Whisper in Settings before retrying."
+    );
+  }
 
   type Step = { type: "local" } | { type: "cloud"; index: number };
   const steps: Step[] = [];
@@ -225,7 +233,8 @@ async function transcribeAudio(
 }
 
 export async function getGenericTranscript(
-  url: string
+  url: string,
+  options: { canonicalVideoId?: string; platform?: string; localOnly?: boolean } = {}
 ): Promise<VideoTranscriptResult & { source: string; platform: string; videoUrl: string }> {
   transcriptionProgress.emit("progress", {
     stage: "fetching_captions",
@@ -235,8 +244,9 @@ export async function getGenericTranscript(
   });
 
   const info = await fetchVideoInfo(url);
-  const platform = platformFromInfo(info);
+  const platform = options.platform || platformFromInfo(info);
   const metadata = metadataFromInfo(info, platform);
+  if (options.canonicalVideoId) metadata.videoId = options.canonicalVideoId;
 
   console.log(`[generic] Platform=${platform} id=${info.id} title="${metadata.title}"`);
 
@@ -255,7 +265,9 @@ export async function getGenericTranscript(
   const audioPath = await downloadGenericAudio(url, safeOutputId);
 
   try {
-    const { segments, source } = await transcribeAudio(audioPath, metadata.videoId);
+    const { segments, source } = await transcribeMediaFile(audioPath, metadata.videoId, {
+      localOnly: options.localOnly,
+    });
 
     transcriptionProgress.emit("progress", {
       stage: "done",

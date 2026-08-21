@@ -35,6 +35,17 @@ var TranscriberUrlUtils = globalThis.TranscriberUrlUtils || (() => {
     }
   }
 
+  function extractGoogleDriveFileId(url) {
+    try {
+      const u = new URL(url);
+      if (u.hostname.replace(/^www\./, "") !== "drive.google.com") return null;
+      const match = u.pathname.match(/^\/file\/d\/([A-Za-z0-9_-]{10,128})(?:\/|$)/);
+      return match ? match[1] : null;
+    } catch {
+      return null;
+    }
+  }
+
   // Superset extractor with host checks and platform prefixes; matches the
   // videoId shapes the content scripts report (twitter:<id>, linkedin:<id>).
   function extractContentId(url) {
@@ -48,6 +59,11 @@ var TranscriberUrlUtils = globalThis.TranscriberUrlUtils || (() => {
 
       if (host === "open.spotify.com") {
         return extractSpotifyEpisodeId(url);
+      }
+
+      if (host === "drive.google.com") {
+        const fileId = extractGoogleDriveFileId(url);
+        return fileId ? `drive:${fileId}` : null;
       }
 
       if (host === "x.com" || host === "twitter.com" || host === "mobile.twitter.com") {
@@ -68,7 +84,12 @@ var TranscriberUrlUtils = globalThis.TranscriberUrlUtils || (() => {
     return null;
   }
 
-  return { extractYouTubeVideoId, extractSpotifyEpisodeId, extractContentId };
+  return {
+    extractYouTubeVideoId,
+    extractSpotifyEpisodeId,
+    extractGoogleDriveFileId,
+    extractContentId,
+  };
 })();
 
 globalThis.TranscriberUrlUtils = TranscriberUrlUtils;

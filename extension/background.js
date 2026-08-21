@@ -1,4 +1,9 @@
-importScripts("url-utils.js", "source-integrity.js", "transcription-progress.js");
+importScripts(
+  "url-utils.js",
+  "source-integrity.js",
+  "transcription-progress.js",
+  "google-drive-import.js"
+);
 
 // ---------------------------------------------------------------------------
 // API Configuration — runtime mode switching (local / cloud)
@@ -271,6 +276,30 @@ async function setState(state) {
 async function clearState() {
   await chrome.storage.session.remove("_txState");
 }
+
+const googleDriveImport = TranscriberGoogleDriveImport.createLifecycle({
+  localBase: LOCAL_BASE,
+  getMode: async () => (await getApiConfig()).mode,
+  getState,
+  setState,
+  setBadge,
+  advanceQueue: processNextInQueue,
+  schedulePoll: (jobId) =>
+    chrome.alarms.create(`drive-import:${jobId}`, { delayInMinutes: 0.5 }),
+  openAuthorization: async (url) => {
+    try {
+      await chrome.windows.create({ url, type: "popup", width: 560, height: 760 });
+    } catch {
+      await chrome.tabs.create({ url, active: true });
+    }
+  },
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name.startsWith("drive-import:")) {
+    void googleDriveImport.resumeIfNeeded();
+  }
+});
 
 async function getQueue() {
   const { _txQueue } = await chrome.storage.session.get("_txQueue");
@@ -1369,6 +1398,9 @@ async function doTranscribe(url, title, author = "", channelUrl = "", videoId = 
   setBadge("...", "#a58959");
 
   try {
+    if (googleDriveImport.isContentId(videoId)) {
+      return await googleDriveImport.start(state);
+    }
     // Fast path: scrape captions client-side via the YouTube tab and send
     // them along with the transcribe request. Server-side caption fetch is
     // a wasted round-trip when the page already has them. Falls back
@@ -1954,9 +1986,21 @@ chrome.action.onClicked.addListener(async (tab) => {
 async function recoverInterruptedTranscription() {
   const state = await getState();
   if (state?.status === "transcribing") {
+    if (
+      googleDriveImport.isResumableState(state)
+    ) {
+      // Evaluation-time Drive recovery below owns resumable jobs. Do not
+      // start a second poller when runtime.onStartup fires in the same worker.
+      return;
+    }
     state.status = "error";
     state.error = "Transcription was interrupted. Please retry.";
     await setState(state);
     setBadge("!", "#ef4444");
   }
 }
+
+// A Manifest V3 service worker may restart during a long local Whisper job.
+// Resume Drive polling whenever this worker is evaluated, not only when the
+// browser profile emits runtime.onStartup.
+googleDriveImport.resumeIfNeeded();

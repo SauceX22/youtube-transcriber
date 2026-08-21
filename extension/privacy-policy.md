@@ -72,6 +72,7 @@ Required permissions (declared in the manifest):
 - **`activeTab`** — read the current tab's URL to detect a supported video or podcast page.
 - **`tabs`** — open completion redirects (e.g. OAuth callbacks) and `obsidian://` URL-scheme links to deliver transcripts.
 - **`storage`** — persist settings, transcription state, and preferences.
+- **`alarms`** — resume local status checks for long-running private Google Drive imports after Chrome suspends the background worker.
 - **`sidePanel`** — display the transcription panel alongside your browsing.
 - **`scripting`** — register content scripts dynamically based on which optional host permissions you have granted.
 
