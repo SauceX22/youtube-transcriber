@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-30
+
+### Fixed
+- **YouTube audio-download failures now explain the recovery path** — yt-dlp format, SABR, and challenge errors recommend updating yt-dlp and retrying instead of exposing the failed shell command. Other unclassified failures prefer yt-dlp's actual `ERROR:` line.
+
 ## 2026-08-21
 
 ### Added

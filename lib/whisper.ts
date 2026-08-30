@@ -4,6 +4,7 @@ import os from "os";
 import path from "path";
 import type { TranscriptSegment } from "./types";
 import type { ProgressStage } from "./progress";
+import { classifyYtdlpError } from "./ytdlp-errors";
 
 export type ProgressCallback = (event: { stage: ProgressStage; progress: number; statusText: string }) => void;
 
@@ -232,30 +233,6 @@ async function runMlxWhisper(audioPath: string, outputDir: string, model: string
   }
 
   throw new Error(`MLX backend failed for all model candidates: ${candidates.join(", ")} (${lastError})`);
-}
-
-/**
- * Classify a yt-dlp error into a user-friendly message.
- */
-function classifyYtdlpError(raw: string): string {
-  if (/n challenge solving failed|n function possibilities/i.test(raw)) {
-    return "Captions unavailable and audio download failed. This may be a temporary issue, try again in a moment.";
-  }
-  if (/unable to download webpage|urlopen error|timed out|network is unreachable|name or service not known|temporary failure in name resolution/i.test(raw)) {
-    return "Network error downloading audio. Check your internet connection and try again.";
-  }
-  if (/video unavailable|private video|removed/i.test(raw)) {
-    return "This video is unavailable, private, or has been removed.";
-  }
-  if (/sign in to confirm|age-restricted/i.test(raw)) {
-    return "This video is age-restricted and requires authentication.";
-  }
-  if (/copyright|blocked/i.test(raw)) {
-    return "This video is blocked or restricted due to copyright.";
-  }
-  // Fallback: first non-WARNING line, truncated
-  const meaningful = raw.split("\n").find((l) => l.trim() && !l.startsWith("WARNING:"));
-  return (meaningful || raw).slice(0, 200);
 }
 
 /**
