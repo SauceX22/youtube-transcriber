@@ -1,0 +1,11 @@
+.git
+node_modules
+.next
+.venv
+backups
+*.db
+*.db-journal
+*.db-wal
+tsconfig.tsbuildinfo
+extension
+docs/media
