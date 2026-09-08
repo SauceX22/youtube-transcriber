@@ -9,3 +9,6 @@ backups
 tsconfig.tsbuildinfo
 extension
 docs/media
+mcp-server
+tests
+contrib
