@@ -31,4 +31,4 @@ VOLUME ["/data"]
 EXPOSE 19720
 
 # db push, not migrate deploy — prisma/migrations is stale upstream and yields a broken schema
-CMD ["sh", "-c", "npx prisma db push --skip-generate && npx next start -p 19720 -H 0.0.0.0"]
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss && npx next start -p 19720 -H 0.0.0.0"]
