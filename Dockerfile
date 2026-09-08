@@ -3,7 +3,7 @@
 FROM node:24-slim
 
 RUN apt-get update -qq \
- && apt-get install -y --no-install-recommends ffmpeg ca-certificates curl python3 debianutils \
+ && apt-get install -y --no-install-recommends ffmpeg ca-certificates curl wget python3 debianutils \
  && rm -rf /var/lib/apt/lists/* \
  # distro yt-dlp is months stale and breaks YouTube extraction — use the release binary
  && curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o /usr/local/bin/yt-dlp \
